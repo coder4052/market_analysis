@@ -377,23 +377,6 @@ def show_analysis_results(analysis_results, json_content, timestamp, github_succ
     
     with tab_all:
         show_category_analysis(analysis_results.get('all_category', {}), "전체")
-    
-    # 다운로드 섹션
-    st.markdown("---")
-    st.subheader("📋 분석 결과 다운로드")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.download_button(
-            label="📥 분석 결과 JSON 다운로드",
-            data=json_content,
-            file_name=f"sujeonggwa_analysis_{timestamp}.json",
-            mime='application/json'
-        )
-    
-    with col2:
-        st.info("📊 원본 데이터는 새로운 파일 업로드 시에만 제공됩니다.")
 
 def show_category_analysis(category_data, category_type):
     """카테고리별 분석 결과 표시"""
@@ -499,13 +482,8 @@ def main():
     )
     
     # 헤더
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.title("🥤 서로 수정과 - 시장 가격 분석 대시보드")
-        st.markdown("##### *플랫폼별 가격 경쟁력 및 시장 포지셔닝 분석*")
-    
-    with col2:
-        st.image("https://via.placeholder.com/150x80/FF6B6B/FFFFFF?text=SEORO", width=150)
+    st.title("🥤 서로 수정과 - 시장 가격 분석 대시보드")
+    st.markdown("##### *플랫폼별 가격 경쟁력 및 시장 포지셔닝 분석*")
     
     st.markdown("---")
     
