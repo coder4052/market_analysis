@@ -660,65 +660,25 @@ def main():
         # 초기 화면
         st.info("👈 사이드바에서 엑셀 파일들을 업로드하고 분석을 시작하세요.")
         
-        # 안내 메시지
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            with st.expander("📋 사용 방법 및 기능 안내", expanded=True):
-                st.markdown("""
-                ### 🚀 주요 기능
-                
-                **1. 🎯 핵심 비즈니스 분석**
-                - 서로 브랜드의 플랫폼별 가격 경쟁력 분석
-                - 단위가격(100ml당) 기준 시장 포지셔닝
-                - 경쟁사 대비 가격 차이 및 경쟁력 평가
-                
-                **2. 📊 시장 현황 파악**  
-                - 브랜드별 시장 점유율 (제품 수 기준)
-                - 가격대별 제품 분포 및 우리 브랜드 위치
-                - 플랫폼별 제품 현황 비교
-                
-                **3. 🔄 자동화된 결과 관리**
-                - GitHub 자동 연동으로 결과 저장
-                - 기존 분석 결과 자동 삭제 후 최신 결과 업데이트
-                - JSON/CSV 형태로 데이터 다운로드 가능
-                
-                ### 📁 파일 업로드 가이드
-                - **지원 형식**: Excel 파일 (.xlsx, .xls)
-                - **파일명 규칙**: "네이버 수정과 가격", "쿠팡 수정과 가격" 등
-                - **필수 컬럼**: 브랜드, 제품명, 용량(ml), 최저가(배송비 포함), 최저가 단위가격(100ml당) 등
-                """)
-        
-        with col2:
-            st.markdown("### 🔧 Streamlit Cloud 설정")
-            st.info("""
-            **배포 후 Secrets 설정:**
-            
-            1. Streamlit Cloud 대시보드 접속
-            2. Settings → **Secrets** 탭
-            3. 다음 내용 입력:
-            
-            ```toml
-            GITHUB_TOKEN = "ghp_xxxxxxxxxxxxx"
-            GITHUB_REPO = "username/repo-name"
-            ```
-            
-            **GitHub Token 발급:**
-            - Settings → Developer settings → Personal access tokens
-            - 권한: `repo`, `contents:write`
-            """)
-            
-            st.warning("""
-            ⚠️ **주의**: 로컬 개발 시에만 `.streamlit/secrets.toml` 파일을 사용하고, 
-            Git에는 절대 커밋하지 마세요!
-            """)
-            
-            st.markdown("### 📞 지원")
+        # 간단한 안내 메시지
+        with st.expander("📋 사용 방법", expanded=False):
             st.markdown("""
-            문의사항이나 오류 발생 시:
-            - 파일 형식 확인
-            - 필수 컬럼 포함 여부 확인  
-            - GitHub 설정 확인
+            ### 🚀 주요 기능
+            
+            **🎯 핵심 비즈니스 분석**
+            - 서로 브랜드의 플랫폼별 가격 경쟁력 분석
+            - 단위가격(100ml당) 기준 시장 포지셔닝  
+            - 경쟁사 대비 가격 차이 및 경쟁력 평가
+            
+            **📊 시장 현황 파악**
+            - 브랜드별 시장 점유율 분석
+            - 가격대별 제품 분포 및 우리 브랜드 위치
+            - 플랫폼별 제품 현황 비교
+            
+            ### 📁 파일 업로드 가이드
+            - **지원 형식**: Excel 파일 (.xlsx, .xls)
+            - **파일명 예시**: "네이버 수정과 가격", "쿠팡 수정과 가격" 등
+            - **필수 컬럼**: 브랜드, 제품명, 용량(ml), 최저가(배송비 포함), 최저가 단위가격(100ml당) 등
             """)
 
 # Streamlit 앱 실행
