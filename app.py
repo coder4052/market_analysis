@@ -1,133 +1,4 @@
-def show_analysis_results(analysis_results, json_content, timestamp, github_success):
-    """분석 결과를 표시하는 함수"""
-    
-    # 결과 대시보드
-    if github_success:
-        st.success("✅ 분석 완료 및 GitHub 저장 성공!")
-    else:
-        st.warning("⚠️ 분석 완료, GitHub 저장 실패")
-    
-    # 카테고리 선택 탭
-    tab_handmade, tab_all = st.tabs(["🥛 수제 제품 분석", "🏭 전체 제품 분석 (수제+공장형)"])
-    
-    with tab_handmade:
-        show_category_analysis(analysis_results.get('handmade_category', {}), "수제")
-    
-    with tab_all:
-        show_category_analysis(analysis_results.get('all_category', {}), "전체")
-    
-    # 다운로드 섹션
-    st.markdown("---")
-    st.subheader("📋 분석 결과 다운로드")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.download_button(
-            label="📥 분석 결과 JSON 다운로드",
-            data=json_content,
-            file_name=f"sujeonggwa_analysis_{timestamp}.json",
-            mime='application/json'
-        )
-    
-    with col2:
-        st.info("📊 원본 데이터는 새로운 파일 업로드 시에만 제공됩니다.")
-
-def show_category_analysis(category_data, category_type):
-    """카테고리별 분석 결과 표시"""
-    
-    if not category_data:
-        st.warning(f"{category_type} 카테고리 데이터가 없습니다.")
-        return
-    
-    # 핵심 지표 카드
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("📊 분석된 제품 수", f"{category_data.get('total_products_analyzed', 0)}개")
-    
-    with col2:
-        st.metric("🎯 고유 제품 수", f"{category_data.get('total_unique_products', 0)}개")
-    
-    with col3:
-        our_count = category_data.get('our_unique_products_count', 0)
-        st.metric("🥤 서로 브랜드 (고유)", f"{our_count}개")
-    
-    with col4:
-        competitor_count = category_data.get('competitor_unique_products_count', 0)
-        st.metric("🏭 경쟁사 제품 (고유)", f"{competitor_count}개")
-    
-    st.markdown("---")
-    
-    # 세부 분석 탭
-    tab1, tab2, tab3 = st.tabs(["💰 가격 경쟁력", "📊 시장 분석", "📈 상세 정보"])
-    
-    with tab1:
-        st.subheader(f"💰 {category_type} 카테고리 가격 경쟁력 분석")
-        
-        # 경쟁력 요약 테이블
-        if 'price_competitiveness' in category_data.get('business_insights', {}):
-            comp_data = category_data['business_insights']['price_competitiveness']
-            
-            st.markdown("#### 📋 플랫폼별 경쟁력 요약")
-            
-            for platform, data in comp_data.items():
-                with st.expander(f"🏪 {platform} 상세 분석"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.metric("서로 평균 단위가격", f"{data['우리_평균단위가격']:,}원")
-                        st.metric("경쟁사 평균 단위가격", f"{data['경쟁사_평균단위가격']:,}원")
-                    
-                    with col2:
-                        price_diff = data['가격차이']
-                        price_diff_percent = data['가격차이_퍼센트']
-                        
-                        if price_diff > 0:
-                            st.metric("가격 차이", f"+{price_diff:,}원", f"+{price_diff_percent}%")
-                        else:
-                            st.metric("가격 차이", f"{price_diff:,}원", f"{price_diff_percent}%")
-                        
-                        # 시장 포지션
-                        position = data['시장_포지션']
-                        if position == "최저가 그룹":
-                            st.success(f"🎯 시장 포지션: **{position}**")
-                        elif position == "평균 이하":
-                            st.info(f"📊 시장 포지션: **{position}**")
-                        else:
-                            st.warning(f"📈 시장 포지션: **{position}**")
-        else:
-            st.info("가격 경쟁력 데이터가 없습니다.")
-    
-    with tab2:
-        st.subheader(f"📊 {category_type} 카테고리 시장 점유율")
-        
-        # 시장 점유율 상세
-        if 'market_share' in category_data.get('business_insights', {}):
-            st.markdown("#### 🏆 브랜드별 시장 점유율 (고유제품 기준)")
-            share_data = category_data['business_insights']['market_share']
-            
-            share_df = pd.DataFrame([
-                {'브랜드': brand, '고유제품 수': data['고유제품_수'], '점유율': f"{data['점유율_퍼센트']}%"}
-                for brand, data in share_data.items()
-            ])
-            
-            st.dataframe(share_df, use_container_width=True)
-        else:
-            st.info("시장 점유율 데이터가 없습니다.")
-    
-    with tab3:
-        # 카테고리 정보 요약
-        st.markdown(f"#### 📈 {category_type} 카테고리 분석 요약")
-        st.json({
-            "카테고리명": category_data.get('category_name', 'Unknown'),
-            "총_분석제품수": category_data.get('total_products_analyzed', 0),
-            "고유제품수": category_data.get('total_unique_products', 0),
-            "서로브랜드_제품수": category_data.get('our_products_count', 0),
-            "서로브랜드_고유제품수": category_data.get('our_unique_products_count', 0),
-            "경쟁사_제품수": category_data.get('competitor_products_count', 0),
-            "경쟁사_고유제품수": category_data.get('competitor_unique_products_count', 0)
-        })import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -373,89 +244,6 @@ class SujeonggwaMarketAnalyzer:
         
         return category_results
 
-    def create_business_visualizations(self, handmade_df, our_products, competitor_products, analysis_results):
-        """소상공인 관점의 시각화"""
-        figs = {}
-        
-        # 1. 플랫폼별 우리 브랜드 가격 경쟁력
-        if 'price_competitiveness' in analysis_results['business_insights']:
-            comp_data = analysis_results['business_insights']['price_competitiveness']
-            
-            platforms = list(comp_data.keys())
-            our_prices = [comp_data[p]['우리_평균단위가격'] for p in platforms]
-            competitor_avg_prices = [comp_data[p]['경쟁사_평균단위가격'] for p in platforms]
-            competitor_min_prices = [comp_data[p]['경쟁사_최저단위가격'] for p in platforms]
-            
-            fig_comp = go.Figure()
-            fig_comp.add_trace(go.Bar(name='서로 브랜드', x=platforms, y=our_prices, marker_color='#FF6B6B'))
-            fig_comp.add_trace(go.Bar(name='경쟁사 평균', x=platforms, y=competitor_avg_prices, marker_color='#4ECDC4'))
-            fig_comp.add_trace(go.Bar(name='경쟁사 최저가', x=platforms, y=competitor_min_prices, marker_color='#45B7D1'))
-            
-            fig_comp.update_layout(
-                title='플랫폼별 단위가격 경쟁력 비교 (100ml당)',
-                xaxis_title='플랫폼',
-                yaxis_title='단위가격 (원)',
-                barmode='group'
-            )
-            figs['price_competitiveness'] = fig_comp
-        
-        # 2. 시장 점유율 (상위 브랜드)
-        if 'market_share' in analysis_results['business_insights']:
-            share_data = analysis_results['business_insights']['market_share']
-            brands = list(share_data.keys())
-            shares = [share_data[b]['점유율_퍼센트'] for b in brands]
-            
-            # 서로 브랜드 강조
-            colors = ['#FF6B6B' if brand == self.our_brand else '#E0E0E0' for brand in brands]
-            
-            fig_share = px.pie(
-                values=shares, 
-                names=brands,
-                title='브랜드별 시장 점유율 (제품 수 기준)',
-                color_discrete_sequence=colors
-            )
-            figs['market_share'] = fig_share
-        
-        # 3. 가격대별 제품 분포 (우리 위치)
-        if 'price_distribution' in analysis_results['business_insights']:
-            dist_data = analysis_results['business_insights']['price_distribution']
-            
-            price_ranges = list(dist_data.keys())
-            total_counts = [dist_data[p]['전체_제품수'] for p in price_ranges]
-            our_counts = [dist_data[p]['우리_제품수'] for p in price_ranges]
-            
-            fig_dist = go.Figure()
-            fig_dist.add_trace(go.Bar(name='전체 시장', x=price_ranges, y=total_counts, marker_color='#E0E0E0'))
-            fig_dist.add_trace(go.Bar(name='서로 브랜드', x=price_ranges, y=our_counts, marker_color='#FF6B6B'))
-            
-            fig_dist.update_layout(
-                title='가격대별 제품 분포 (단위가격 기준)',
-                xaxis_title='가격대 (100ml당)',
-                yaxis_title='제품 수',
-                barmode='overlay'
-            )
-            figs['price_distribution'] = fig_dist
-        
-        # 4. 플랫폼별 우리 제품 현황
-        if not our_products.empty:
-            platform_counts = our_products['플랫폼'].value_counts()
-            
-            fig_our_platform = px.bar(
-                x=platform_counts.index,
-                y=platform_counts.values,
-                title='플랫폼별 서로 브랜드 제품 수',
-                color=platform_counts.values,
-                color_continuous_scale='Reds'
-            )
-            fig_our_platform.update_layout(
-                xaxis_title='플랫폼',
-                yaxis_title='제품 수',
-                showlegend=False
-            )
-            figs['our_platform_status'] = fig_our_platform
-        
-        return figs
-
     def load_latest_analysis_from_github(self):
         """GitHub에서 최신 분석 결과 불러오기"""
         if not GITHUB_TOKEN:
@@ -491,6 +279,8 @@ class SujeonggwaMarketAnalyzer:
         except Exception as e:
             st.error(f"GitHub에서 분석 결과 로드 중 오류: {str(e)}")
             return None
+
+    def clear_github_results(self):
         """GitHub에서 기존 분석 결과 파일들 삭제"""
         if not GITHUB_TOKEN:
             return False
@@ -569,6 +359,137 @@ class SujeonggwaMarketAnalyzer:
         except Exception as e:
             st.error(f"GitHub 저장 중 오류: {str(e)}")
             return False
+
+def show_analysis_results(analysis_results, json_content, timestamp, github_success):
+    """분석 결과를 표시하는 함수"""
+    
+    # 결과 대시보드
+    if github_success:
+        st.success("✅ 분석 완료 및 GitHub 저장 성공!")
+    else:
+        st.warning("⚠️ 분석 완료, GitHub 저장 실패")
+    
+    # 카테고리 선택 탭
+    tab_handmade, tab_all = st.tabs(["🥛 수제 제품 분석", "🏭 전체 제품 분석 (수제+공장형)"])
+    
+    with tab_handmade:
+        show_category_analysis(analysis_results.get('handmade_category', {}), "수제")
+    
+    with tab_all:
+        show_category_analysis(analysis_results.get('all_category', {}), "전체")
+    
+    # 다운로드 섹션
+    st.markdown("---")
+    st.subheader("📋 분석 결과 다운로드")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.download_button(
+            label="📥 분석 결과 JSON 다운로드",
+            data=json_content,
+            file_name=f"sujeonggwa_analysis_{timestamp}.json",
+            mime='application/json'
+        )
+    
+    with col2:
+        st.info("📊 원본 데이터는 새로운 파일 업로드 시에만 제공됩니다.")
+
+def show_category_analysis(category_data, category_type):
+    """카테고리별 분석 결과 표시"""
+    
+    if not category_data:
+        st.warning(f"{category_type} 카테고리 데이터가 없습니다.")
+        return
+    
+    # 핵심 지표 카드
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("📊 분석된 제품 수", f"{category_data.get('total_products_analyzed', 0)}개")
+    
+    with col2:
+        st.metric("🎯 고유 제품 수", f"{category_data.get('total_unique_products', 0)}개")
+    
+    with col3:
+        our_count = category_data.get('our_unique_products_count', 0)
+        st.metric("🥤 서로 브랜드 (고유)", f"{our_count}개")
+    
+    with col4:
+        competitor_count = category_data.get('competitor_unique_products_count', 0)
+        st.metric("🏭 경쟁사 제품 (고유)", f"{competitor_count}개")
+    
+    st.markdown("---")
+    
+    # 세부 분석 탭
+    tab1, tab2, tab3 = st.tabs(["💰 가격 경쟁력", "📊 시장 분석", "📈 상세 정보"])
+    
+    with tab1:
+        st.subheader(f"💰 {category_type} 카테고리 가격 경쟁력 분석")
+        
+        # 경쟁력 요약 테이블
+        if 'price_competitiveness' in category_data.get('business_insights', {}):
+            comp_data = category_data['business_insights']['price_competitiveness']
+            
+            st.markdown("#### 📋 플랫폼별 경쟁력 요약")
+            
+            for platform, data in comp_data.items():
+                with st.expander(f"🏪 {platform} 상세 분석"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.metric("서로 평균 단위가격", f"{data['우리_평균단위가격']:,}원")
+                        st.metric("경쟁사 평균 단위가격", f"{data['경쟁사_평균단위가격']:,}원")
+                    
+                    with col2:
+                        price_diff = data['가격차이']
+                        price_diff_percent = data['가격차이_퍼센트']
+                        
+                        if price_diff > 0:
+                            st.metric("가격 차이", f"+{price_diff:,}원", f"+{price_diff_percent}%")
+                        else:
+                            st.metric("가격 차이", f"{price_diff:,}원", f"{price_diff_percent}%")
+                        
+                        # 시장 포지션
+                        position = data['시장_포지션']
+                        if position == "최저가 그룹":
+                            st.success(f"🎯 시장 포지션: **{position}**")
+                        elif position == "평균 이하":
+                            st.info(f"📊 시장 포지션: **{position}**")
+                        else:
+                            st.warning(f"📈 시장 포지션: **{position}**")
+        else:
+            st.info("가격 경쟁력 데이터가 없습니다.")
+    
+    with tab2:
+        st.subheader(f"📊 {category_type} 카테고리 시장 점유율")
+        
+        # 시장 점유율 상세
+        if 'market_share' in category_data.get('business_insights', {}):
+            st.markdown("#### 🏆 브랜드별 시장 점유율 (고유제품 기준)")
+            share_data = category_data['business_insights']['market_share']
+            
+            share_df = pd.DataFrame([
+                {'브랜드': brand, '고유제품 수': data['고유제품_수'], '점유율': f"{data['점유율_퍼센트']}%"}
+                for brand, data in share_data.items()
+            ])
+            
+            st.dataframe(share_df, use_container_width=True)
+        else:
+            st.info("시장 점유율 데이터가 없습니다.")
+    
+    with tab3:
+        # 카테고리 정보 요약
+        st.markdown(f"#### 📈 {category_type} 카테고리 분석 요약")
+        st.json({
+            "카테고리명": category_data.get('category_name', 'Unknown'),
+            "총_분석제품수": category_data.get('total_products_analyzed', 0),
+            "고유제품수": category_data.get('total_unique_products', 0),
+            "서로브랜드_제품수": category_data.get('our_products_count', 0),
+            "서로브랜드_고유제품수": category_data.get('our_unique_products_count', 0),
+            "경쟁사_제품수": category_data.get('competitor_products_count', 0),
+            "경쟁사_고유제품수": category_data.get('competitor_unique_products_count', 0)
+        })
 
 def main():
     st.set_page_config(
@@ -708,197 +629,31 @@ def main():
                 st.session_state.get('json_content', ''), 
                 st.session_state.get('timestamp', 'unknown'),
                 True
-            )개")
+            )
+        else:
+            # 초기 화면  
+            st.info("👈 사이드바에서 엑셀 파일들을 업로드하고 분석을 시작하세요.")
             
-            with col4:
-                competitor_count = analysis_results['competitor_products_count']
-                st.metric("🏭 경쟁사 제품", f"{competitor_count}개")
-            
-            st.markdown("---")
-            
-            # 탭별 결과
-            tab1, tab2, tab3 = st.tabs(["💰 가격 경쟁력", "📊 시장 분석", "📋 상세 데이터"])
-            
-            with tab1:
-                st.subheader("💰 플랫폼별 가격 경쟁력 분석")
+            # 간단한 안내 메시지
+            with st.expander("📋 사용 방법", expanded=False):
+                st.markdown("""
+                ### 🚀 주요 기능
                 
-                if 'price_competitiveness' in figs:
-                    st.plotly_chart(figs['price_competitiveness'], use_container_width=True)
+                **🎯 핵심 비즈니스 분석**
+                - 서로 브랜드의 플랫폼별 가격 경쟁력 분석
+                - 단위가격(100ml당) 기준 시장 포지셔닝  
+                - 경쟁사 대비 가격 차이 및 경쟁력 평가
                 
-                # 경쟁력 요약 테이블
-                if 'price_competitiveness' in analysis_results['business_insights']:
-                    comp_data = analysis_results['business_insights']['price_competitiveness']
-                    
-                    st.markdown("#### 📋 플랫폼별 경쟁력 요약")
-                    
-                    for platform, data in comp_data.items():
-                        with st.expander(f"🏪 {platform} 상세 분석"):
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.metric("서로 평균 단위가격", f"{data['우리_평균단위가격']:,}원")
-                                st.metric("경쟁사 평균 단위가격", f"{data['경쟁사_평균단위가격']:,}원")
-                            
-                            with col2:
-                                price_diff = data['가격차이']
-                                price_diff_percent = data['가격차이_퍼센트']
-                                
-                                if price_diff > 0:
-                                    st.metric("가격 차이", f"+{price_diff:,}원", f"+{price_diff_percent}%")
-                                else:
-                                    st.metric("가격 차이", f"{price_diff:,}원", f"{price_diff_percent}%")
-                                
-                                # 시장 포지션
-                                position = data['시장_포지션']
-                                if position == "최저가 그룹":
-                                    st.success(f"🎯 시장 포지션: **{position}**")
-                                elif position == "평균 이하":
-                                    st.info(f"📊 시장 포지션: **{position}**")
-                                else:
-                                    st.warning(f"📈 시장 포지션: **{position}**")
-            
-            with tab2:
-                st.subheader("📊 시장 점유율 및 포지셔닝")
+                **📊 시장 현황 파악**
+                - 브랜드별 시장 점유율 분석
+                - 가격대별 제품 분포 및 우리 브랜드 위치
+                - 플랫폼별 제품 현황 비교
                 
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if 'market_share' in figs:
-                        st.plotly_chart(figs['market_share'], use_container_width=True)
-                
-                with col2:
-                    if 'price_distribution' in figs:
-                        st.plotly_chart(figs['price_distribution'], use_container_width=True)
-                
-                # 우리 제품 플랫폼 현황
-                if 'our_platform_status' in figs:
-                    st.plotly_chart(figs['our_platform_status'], use_container_width=True)
-                
-                # 시장 점유율 상세
-                if 'market_share' in analysis_results['business_insights']:
-                    st.markdown("#### 🏆 브랜드별 시장 점유율")
-                    share_data = analysis_results['business_insights']['market_share']
-                    
-                    share_df = pd.DataFrame([
-                        {'브랜드': brand, '제품 수': data['제품_수'], '점유율': f"{data['점유율_퍼센트']}%"}
-                        for brand, data in share_data.items()
-                    ])
-                    
-                    st.dataframe(share_df, use_container_width=True)
-            
-            with tab3:
-                st.subheader("📋 상세 데이터 및 다운로드")
-                
-                # 분석 결과 JSON 다운로드
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.download_button(
-                        label="📥 분석 결과 JSON 다운로드",
-                        data=json_content,
-                        file_name=f"sujeonggwa_analysis_{timestamp}.json",
-                        mime='application/json'
-                    )
-                
-                with col2:
-                    # 전체 데이터 CSV 다운로드
-                    csv_data = handmade_df.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button(
-                        label="📥 전체 데이터 CSV 다운로드",
-                        data=csv_data,
-                        file_name=f"sujeonggwa_data_{timestamp}.csv",
-                        mime='text/csv'
-                    )
-                
-                # 업로드된 파일 정보
-                st.markdown("#### 📄 업로드된 파일 정보")
-                for info in platform_info:
-                    with st.expander(f"{info['platform']} - {info['filename']}"):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write(f"**데이터 행 수:** {info['rows']:,}개")
-                        with col2:
-                            if info['missing_columns']:
-                                st.warning(f"누락 컬럼: {len(info['missing_columns'])}개")
-                            else:
-                                st.success("✅ 모든 필수 컬럼 포함")
-                
-                # 상세 데이터 테이블
-                st.markdown("#### 🔍 분석 데이터 미리보기")
-                
-                # 데이터 필터링 옵션
-                filter_col1, filter_col2 = st.columns(2)
-                
-                with filter_col1:
-                    selected_platforms = st.multiselect(
-                        "플랫폼 선택",
-                        options=handmade_df['플랫폼'].unique(),
-                        default=handmade_df['플랫폼'].unique()
-                    )
-                
-                with filter_col2:
-                    show_our_brand_only = st.checkbox("서로 브랜드만 보기", value=False)
-                
-                # 데이터 필터링
-                filtered_df = handmade_df[handmade_df['플랫폼'].isin(selected_platforms)]
-                
-                if show_our_brand_only:
-                    filtered_df = filtered_df[filtered_df['브랜드'] == '서로']
-                
-                # 중요 컬럼만 표시
-                display_columns = ['플랫폼', '브랜드', '제품명', '용량(ml)', '개수', '최저가(배송비 포함)', '최저가 단위가격(100ml당)']
-                available_display_columns = [col for col in display_columns if col in filtered_df.columns]
-                
-                st.dataframe(
-                    filtered_df[available_display_columns], 
-                    use_container_width=True,
-                    height=400
-                )
-                
-                # 데이터 통계 요약
-                st.markdown("#### 📈 데이터 통계 요약")
-                
-                if '최저가 단위가격(100ml당)' in filtered_df.columns:
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    unit_prices = filtered_df['최저가 단위가격(100ml당)'].dropna()
-                    
-                    with col1:
-                        st.metric("평균 단위가격", f"{unit_prices.mean():,.0f}원")
-                    with col2:
-                        st.metric("최저 단위가격", f"{unit_prices.min():,.0f}원")
-                    with col3:
-                        st.metric("최고 단위가격", f"{unit_prices.max():,.0f}원")
-                    with col4:
-                        st.metric("중간값", f"{unit_prices.median():,.0f}원")
-            
-            # 세션 상태 리셋
-            st.session_state.run_analysis = False
-    
-    else:
-        # 초기 화면
-        st.info("👈 사이드바에서 엑셀 파일들을 업로드하고 분석을 시작하세요.")
-        
-        # 간단한 안내 메시지
-        with st.expander("📋 사용 방법", expanded=False):
-            st.markdown("""
-            ### 🚀 주요 기능
-            
-            **🎯 핵심 비즈니스 분석**
-            - 서로 브랜드의 플랫폼별 가격 경쟁력 분석
-            - 단위가격(100ml당) 기준 시장 포지셔닝  
-            - 경쟁사 대비 가격 차이 및 경쟁력 평가
-            
-            **📊 시장 현황 파악**
-            - 브랜드별 시장 점유율 분석
-            - 가격대별 제품 분포 및 우리 브랜드 위치
-            - 플랫폼별 제품 현황 비교
-            
-            ### 📁 파일 업로드 가이드
-            - **지원 형식**: Excel 파일 (.xlsx, .xls)
-            - **파일명 예시**: "네이버 수정과 가격", "쿠팡 수정과 가격" 등
-            - **필수 컬럼**: 브랜드, 제품명, 용량(ml), 최저가(배송비 포함), 최저가 단위가격(100ml당) 등
-            """)
+                ### 📁 파일 업로드 가이드
+                - **지원 형식**: Excel 파일 (.xlsx, .xls)
+                - **파일명 예시**: "네이버 수정과 가격", "쿠팡 수정과 가격" 등
+                - **필수 컬럼**: 브랜드, 제품명, 용량(ml), 최저가(배송비 포함), 최저가 단위가격(100ml당) 등
+                """)
 
 # Streamlit 앱 실행
 if __name__ == "__main__":
