@@ -13,7 +13,7 @@ from io import BytesIO
 
 # GitHub 설정
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
-GITHUB_REPO = st.secrets.get("GITHUB_REPO", "coder4052/market_analysis")
+GITHUB_REPO = st.secrets.get("GITHUB_REPO", "your-username/market-analysis-results")
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/contents"
 
 class SujeonggwaMarketAnalyzer:
