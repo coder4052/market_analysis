@@ -120,7 +120,34 @@ class SujeonggwaMarketAnalyzer:
     def _analyze_category(self, df, category_name):
         """카테고리별 분석 (수제 또는 전체)"""
         
+        # 리뷰/평점 컬럼 변수 미리 초기화
+        review_col = None
+        rating_col = None
+        
         if df.empty:
+            return {
+                'category_name': category_name,
+                'total_products_analyzed': 0,
+                'total_unique_products': 0,
+                'our_products_count': 0,
+                'our_unique_products_count': 0,
+                'competitor_products_count': 0,
+                'competitor_unique_products_count': 0,
+                'business_insights': {}
+            }
+        
+        # 리뷰/평점 컬럼 찾기
+        available_columns = list(df.columns)
+        
+        for col in ['리뷰 개수', '리뷰개수', 'review_count', '리뷰수']:
+            if col in available_columns:
+                review_col = col
+                break
+        
+        for col in ['평점', '평균평점', 'rating', '별점']:
+            if col in available_columns:
+                rating_col = col
+                break
             return {
                 'category_name': category_name,
                 'total_products_analyzed': 0,
