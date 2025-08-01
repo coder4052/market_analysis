@@ -1558,7 +1558,7 @@ def show_category_analysis(category_data, category_type):
                                     st.write("→ 집중 투자로 시장 점유율 확대")
                     
                     else:
-                        st.warning("플랫폼별 분석 데이터가 없습니다.")",
+                        st.warning("플랫폼별 분석 데이터가 없습니다."),
                                 '시장규모': f"{total_products}개 제품"
                             })
                         
