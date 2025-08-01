@@ -406,12 +406,127 @@ class SujeonggwaMarketAnalyzer:
             except Exception as e:
                 st.warning(f"용량별 시장 분석 중 오류: {str(e)}")
         
-        # 4. 브랜드별 시장 점유율
+        # 4. 브랜드별 시장 점유율 (고도화된 다차원 분석)
         try:
+            # 기존 제품 수 기준 점유율
             brand_share = unique_products['브랜드'].value_counts()
             total_unique_products = len(unique_products)
-            brand_share_percent = {}
             
+            # 리뷰/평점 데이터 준비 및 정제
+            df_with_reviews = df.copy()
+            
+            # 리뷰 개수와 평점 컬럼 확인 및 정제
+            review_col = None
+            rating_col = None
+            
+            for col in ['리뷰 개수', '리뷰개수', 'review_count', '리뷰수']:
+                if col in df_with_reviews.columns:
+                    review_col = col
+                    break
+            
+            for col in ['평점', '평균평점', 'rating', '별점']:
+                if col in df_with_reviews.columns:
+                    rating_col = col
+                    break
+            
+            # 데이터 정제
+            if review_col:
+                df_with_reviews[review_col] = pd.to_numeric(df_with_reviews[review_col], errors='coerce').fillna(0)
+            if rating_col:
+                df_with_reviews[rating_col] = pd.to_numeric(df_with_reviews[rating_col], errors='coerce').fillna(0)
+            
+            # 브랜드별 종합 분석
+            brand_analysis = {}
+            
+            for brand in df_with_reviews['브랜드'].unique():
+                if pd.isna(brand) or brand == '브랜드':  # 헤더 제외
+                    continue
+                
+                brand_data = df_with_reviews[df_with_reviews['브랜드'] == brand]
+                brand_unique = unique_products[unique_products['브랜드'] == brand]
+                
+                analysis = {
+                    '제품_수': len(brand_unique),
+                    '제품_수_점유율': (len(brand_unique) / total_unique_products) * 100 if total_unique_products > 0 else 0
+                }
+                
+                # 리뷰 기반 분석 (리뷰 개수 컬럼이 있는 경우)
+                if review_col and not brand_data[review_col].isna().all():
+                    total_reviews = brand_data[review_col].sum()
+                    avg_reviews_per_product = brand_data[review_col].mean()
+                    
+                    analysis.update({
+                        '총_리뷰수': int(total_reviews),
+                        '제품당_평균_리뷰수': round(avg_reviews_per_product, 1),
+                        '리뷰_기반_인지도': total_reviews  # 나중에 전체 대비 비율로 변환
+                    })
+                
+                # 평점 기반 분석 (평점 컬럼이 있는 경우)
+                if rating_col and not brand_data[rating_col].isna().all():
+                    # 평점이 0이 아닌 제품들만으로 평균 계산
+                    valid_ratings = brand_data[brand_data[rating_col] > 0][rating_col]
+                    
+                    if len(valid_ratings) > 0:
+                        avg_rating = valid_ratings.mean()
+                        rating_count = len(valid_ratings)  # 평점 있는 제품 수
+                        
+                        analysis.update({
+                            '평균_평점': round(avg_rating, 2),
+                            '평점_있는_제품수': rating_count,
+                            '평점_커버리지': round((rating_count / len(brand_data)) * 100, 1)  # 평점 있는 제품 비율
+                        })
+                
+                # 시장 영향력 점수 계산 (리뷰와 평점이 모두 있는 경우)
+                if review_col and rating_col:
+                    # 각 제품별로 (리뷰수 × 평점) 계산 후 합산
+                    brand_data_clean = brand_data.copy()
+                    brand_data_clean = brand_data_clean[
+                        (brand_data_clean[review_col].notna()) & 
+                        (brand_data_clean[rating_col].notna()) &
+                        (brand_data_clean[rating_col] > 0)
+                    ]
+                    
+                    if not brand_data_clean.empty:
+                        # 영향력 점수 = Σ(리뷰수 × 평점)
+                        impact_scores = brand_data_clean[review_col] * brand_data_clean[rating_col]
+                        total_impact = impact_scores.sum()
+                        
+                        analysis['시장_영향력_점수'] = round(total_impact, 1)
+                
+                brand_analysis[brand] = analysis
+            
+            # 전체 시장 대비 비율 계산
+            if review_col:
+                total_market_reviews = sum([data.get('총_리뷰수', 0) for data in brand_analysis.values()])
+                for brand, data in brand_analysis.items():
+                    if '총_리뷰수' in data and total_market_reviews > 0:
+                        data['리뷰_점유율'] = round((data['총_리뷰수'] / total_market_reviews) * 100, 1)
+            
+            if review_col and rating_col:
+                total_market_impact = sum([data.get('시장_영향력_점수', 0) for data in brand_analysis.values()])
+                for brand, data in brand_analysis.items():
+                    if '시장_영향력_점수' in data and total_market_impact > 0:
+                        data['영향력_점유율'] = round((data['시장_영향력_점수'] / total_market_impact) * 100, 1)
+            
+            # 상위 10개 브랜드만 선택 (제품 수 기준)
+            top_brands = sorted(brand_analysis.items(), key=lambda x: x[1]['제품_수'], reverse=True)[:10]
+            
+            # 최종 결과 구성
+            enhanced_market_share = {}
+            for brand, data in top_brands:
+                enhanced_market_share[brand] = data
+            
+            category_results['business_insights']['enhanced_market_share'] = enhanced_market_share
+            category_results['business_insights']['market_analysis_metadata'] = {
+                'has_review_data': review_col is not None,
+                'has_rating_data': rating_col is not None,
+                'review_column': review_col,
+                'rating_column': rating_col,
+                'total_brands_analyzed': len(brand_analysis)
+            }
+            
+            # 기존 market_share도 유지 (하위 호환성)
+            brand_share_percent = {}
             for brand, count in brand_share.head(10).items():
                 if pd.notna(brand) and total_unique_products > 0:
                     percentage = (count / total_unique_products) * 100
@@ -421,8 +536,26 @@ class SujeonggwaMarketAnalyzer:
                     }
             
             category_results['business_insights']['market_share'] = brand_share_percent
+            
         except Exception as e:
             st.warning(f"브랜드별 점유율 분석 중 오류: {str(e)}")
+            # 기존 분석 결과라도 제공
+            try:
+                brand_share = unique_products['브랜드'].value_counts()
+                total_unique_products = len(unique_products)
+                brand_share_percent = {}
+                
+                for brand, count in brand_share.head(10).items():
+                    if pd.notna(brand) and total_unique_products > 0:
+                        percentage = (count / total_unique_products) * 100
+                        brand_share_percent[brand] = {
+                            '제품_수': int(count),
+                            '점유율_퍼센트': round(percentage, 1)
+                        }
+                
+                category_results['business_insights']['market_share'] = brand_share_percent
+            except:
+                pass
         
         return category_results
 
@@ -706,35 +839,192 @@ def show_category_analysis(category_data, category_type):
     
     st.markdown("---")
     
-    # 4. 브랜드별 시장 점유율
-    st.markdown("### 🏆 브랜드별 시장 점유율")
-    if 'market_share' in business_insights:
+    # 4. 브랜드별 시장 점유율 (고도화된 분석)
+    st.markdown("### 🏆 브랜드별 시장 분석")
+    
+    if 'enhanced_market_share' in business_insights:
+        enhanced_data = business_insights['enhanced_market_share']
+        metadata = business_insights.get('market_analysis_metadata', {})
+        
+        if enhanced_data:
+            # 분석 개요
+            has_review = metadata.get('has_review_data', False)
+            has_rating = metadata.get('has_rating_data', False)
+            
+            if has_review and has_rating:
+                st.success("📊 **종합 분석**: 제품 수 + 리뷰 + 평점 데이터 모두 활용")
+            elif has_review or has_rating:
+                st.info(f"📊 **부분 분석**: 제품 수 + {'리뷰' if has_review else '평점'} 데이터 활용")
+            else:
+                st.warning("📊 **기본 분석**: 제품 수만 활용 (리뷰/평점 데이터 없음)")
+            
+            # 탭으로 구분된 다차원 분석
+            analysis_tabs = []
+            tab_names = ["📊 제품 수 점유율"]
+            
+            if has_review:
+                tab_names.append("👥 리뷰 기반 인지도")
+            if has_rating:
+                tab_names.append("⭐ 평점 기준 품질")
+            if has_review and has_rating:
+                tab_names.append("🚀 종합 영향력")
+            
+            analysis_tabs = st.tabs(tab_names)
+            
+            with analysis_tabs[0]:  # 제품 수 점유율
+                st.markdown("#### 📊 제품 수 기준 시장 점유율")
+                
+                product_share_df = pd.DataFrame([
+                    {
+                        '브랜드': brand, 
+                        '제품 수': data.get('제품_수', 0),
+                        '점유율(%)': f"{data.get('제품_수_점유율', 0):.1f}%"
+                    }
+                    for brand, data in enhanced_data.items()
+                ])
+                
+                st.dataframe(product_share_df, use_container_width=True)
+                
+                # 서로 브랜드 순위
+                seoro_rank = None
+                for idx, (brand, _) in enumerate(enhanced_data.items(), 1):
+                    if brand == "서로":
+                        seoro_rank = idx
+                        break
+                
+                if seoro_rank:
+                    if seoro_rank == 1:
+                        st.success(f"🏆 서로 브랜드가 제품 수 기준 **{seoro_rank}위**입니다!")
+                    elif seoro_rank <= 3:
+                        st.info(f"🥉 서로 브랜드가 제품 수 기준 **{seoro_rank}위**입니다.")
+                    else:
+                        st.warning(f"📈 서로 브랜드가 제품 수 기준 **{seoro_rank}위**입니다.")
+            
+            # 리뷰 기반 분석 탭
+            if has_review and len(analysis_tabs) > 1:
+                with analysis_tabs[1]:
+                    st.markdown("#### 👥 리뷰 기반 시장 인지도")
+                    
+                    review_data = []
+                    for brand, data in enhanced_data.items():
+                        if '총_리뷰수' in data:
+                            review_data.append({
+                                '브랜드': brand,
+                                '총 리뷰 수': f"{data.get('총_리뷰수', 0):,}개",
+                                '제품당 평균 리뷰': f"{data.get('제품당_평균_리뷰수', 0):.1f}개",
+                                '리뷰 점유율(%)': f"{data.get('리뷰_점유율', 0):.1f}%"
+                            })
+                    
+                    if review_data:
+                        review_df = pd.DataFrame(review_data)
+                        st.dataframe(review_df, use_container_width=True)
+                        
+                        st.info("💡 **리뷰 기반 인지도**: 실제 구매 고객의 참여도를 반영한 지표")
+                    else:
+                        st.warning("리뷰 데이터가 충분하지 않습니다.")
+            
+            # 평점 기반 분석 탭
+            if has_rating:
+                rating_tab_idx = 1 if not has_review else 2
+                if len(analysis_tabs) > rating_tab_idx:
+                    with analysis_tabs[rating_tab_idx]:
+                        st.markdown("#### ⭐ 평점 기준 품질 순위")
+                        
+                        rating_data = []
+                        for brand, data in enhanced_data.items():
+                            if '평균_평점' in data:
+                                rating_data.append({
+                                    '브랜드': brand,
+                                    '평균 평점': f"{data.get('평균_평점', 0):.2f}점",
+                                    '평점 있는 제품 수': f"{data.get('평점_있는_제품수', 0)}개",
+                                    '평점 커버리지': f"{data.get('평점_커버리지', 0):.1f}%"
+                                })
+                        
+                        if rating_data:
+                            # 평점 순으로 정렬
+                            rating_data.sort(key=lambda x: float(x['평균 평점'].replace('점', '')), reverse=True)
+                            rating_df = pd.DataFrame(rating_data)
+                            st.dataframe(rating_df, use_container_width=True)
+                            
+                            # 서로 브랜드 평점 순위
+                            seoro_rating_rank = None
+                            for idx, item in enumerate(rating_data, 1):
+                                if item['브랜드'] == "서로":
+                                    seoro_rating_rank = idx
+                                    seoro_rating = float(item['평균 평점'].replace('점', ''))
+                                    break
+                            
+                            if seoro_rating_rank:
+                                if seoro_rating >= 4.5:
+                                    st.success(f"⭐ 서로 브랜드 평점: **{seoro_rating:.2f}점** ({seoro_rating_rank}위) - 우수한 품질!")
+                                elif seoro_rating >= 4.0:
+                                    st.info(f"⭐ 서로 브랜드 평점: **{seoro_rating:.2f}점** ({seoro_rating_rank}위) - 양호한 품질")
+                                else:
+                                    st.warning(f"⭐ 서로 브랜드 평점: **{seoro_rating:.2f}점** ({seoro_rating_rank}위) - 품질 개선 필요")
+                            
+                            st.info("💡 **품질 지표**: 실제 구매 고객의 만족도를 반영한 지표")
+                        else:
+                            st.warning("평점 데이터가 충분하지 않습니다.")
+            
+            # 종합 영향력 분석 탭
+            if has_review and has_rating:
+                impact_tab_idx = 3
+                if len(analysis_tabs) > impact_tab_idx:
+                    with analysis_tabs[impact_tab_idx]:
+                        st.markdown("#### 🚀 종합 시장 영향력")
+                        
+                        impact_data = []
+                        for brand, data in enhanced_data.items():
+                            if '시장_영향력_점수' in data:
+                                impact_data.append({
+                                    '브랜드': brand,
+                                    '영향력 점수': f"{data.get('시장_영향력_점수', 0):,.1f}",
+                                    '영향력 점유율(%)': f"{data.get('영향력_점유율', 0):.1f}%",
+                                    '제품 수': f"{data.get('제품_수', 0)}개",
+                                    '총 리뷰': f"{data.get('총_리뷰수', 0):,}개",
+                                    '평균 평점': f"{data.get('평균_평점', 0):.2f}점"
+                                })
+                        
+                        if impact_data:
+                            # 영향력 점수 순으로 정렬
+                            impact_data.sort(key=lambda x: float(x['영향력 점수'].replace(',', '')), reverse=True)
+                            impact_df = pd.DataFrame(impact_data)
+                            st.dataframe(impact_df, use_container_width=True)
+                            
+                            # 서로 브랜드 영향력 순위
+                            seoro_impact_rank = None
+                            for idx, item in enumerate(impact_data, 1):
+                                if item['브랜드'] == "서로":
+                                    seoro_impact_rank = idx
+                                    seoro_impact_share = float(item['영향력 점유율(%)'].replace('%', ''))
+                                    break
+                            
+                            if seoro_impact_rank:
+                                if seoro_impact_rank == 1:
+                                    st.success(f"🚀 서로 브랜드가 종합 영향력 **1위**! (점유율: {seoro_impact_share:.1f}%)")
+                                elif seoro_impact_rank <= 3:
+                                    st.info(f"🚀 서로 브랜드 종합 영향력 **{seoro_impact_rank}위** (점유율: {seoro_impact_share:.1f}%)")
+                                else:
+                                    st.warning(f"🚀 서로 브랜드 종합 영향력 **{seoro_impact_rank}위** (점유율: {seoro_impact_share:.1f}%)")
+                            
+                            st.info("💡 **종합 영향력**: 리뷰 수 × 평점을 고려한 실제 시장 영향력 지표")
+                        else:
+                            st.warning("종합 영향력 계산에 필요한 데이터가 부족합니다.")
+        else:
+            st.warning("브랜드별 분석 데이터가 없습니다.")
+    
+    # 기존 분석도 폴백으로 유지
+    elif 'market_share' in business_insights:
         share_data = business_insights['market_share']
         
         if share_data:
+            st.markdown("#### 📊 기본 제품 수 기준 점유율")
             share_df = pd.DataFrame([
                 {'브랜드': brand, '제품 수': data.get('제품_수', 0), '점유율': f"{data.get('점유율_퍼센트', 0)}%"}
                 for brand, data in share_data.items()
             ])
             
             st.dataframe(share_df, use_container_width=True)
-            
-            # 서로 브랜드 순위 찾기
-            seoro_rank = None
-            for idx, (brand, _) in enumerate(share_data.items(), 1):
-                if brand == "서로":
-                    seoro_rank = idx
-                    break
-            
-            if seoro_rank:
-                if seoro_rank == 1:
-                    st.success(f"🏆 서로 브랜드가 **1위**입니다!")
-                elif seoro_rank <= 3:
-                    st.info(f"🥉 서로 브랜드가 **{seoro_rank}위**입니다.")
-                else:
-                    st.warning(f"📈 서로 브랜드가 **{seoro_rank}위**입니다. 더 많은 제품 라인업이 필요해 보입니다.")
-            else:
-                st.info("서로 브랜드는 현재 상위 10위 안에 없습니다.")
         else:
             st.warning("브랜드별 점유율 데이터가 없습니다.")
     else:
