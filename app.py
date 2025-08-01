@@ -185,10 +185,65 @@ class SujeonggwaMarketAnalyzer:
             'business_insights': {}
         }
         
-        # 1. 우리 브랜드 제품별 상세 현황
+        # 1. 우리 브랜드 제품별 상세 현황 (고도화)
         if not our_unique_products.empty:
             our_product_details = []
+            
+            # 시장 평균 계산 (리뷰/평점)
+            market_avg_reviews = 0
+            market_avg_rating = 0
+            
+            if review_col and rating_col:
+                market_reviews = competitor_products[competitor_products[review_col].notna() & (competitor_products[review_col] > 0)]
+                market_ratings = competitor_products[competitor_products[rating_col].notna() & (competitor_products[rating_col] > 0)]
+                
+                if not market_reviews.empty:
+                    market_avg_reviews = market_reviews[review_col].mean()
+                if not market_ratings.empty:
+                    market_avg_rating = market_ratings[rating_col].mean()
+            
+            # 우리 제품들의 성과 순위 계산 (리뷰수 × 평점 기준)
+            our_products_performance = []
+            
             for _, product in our_unique_products.iterrows():
+                product_reviews = 0
+                product_rating = 0
+                
+                # 해당 제품의 리뷰/평점 데이터 찾기
+                matching_products = our_products[
+                    (our_products['브랜드'] == product['브랜드']) & 
+                    (our_products['제품명'] == product['제품명']) &
+                    (our_products['용량(ml)'] == product['용량(ml)']) &
+                    (our_products['개수'] == product['개수'])
+                ]
+                
+                if not matching_products.empty and review_col and rating_col:
+                    # 여러 플랫폼에서 판매되는 경우 최대값 사용
+                    product_reviews = matching_products[review_col].max() if review_col in matching_products.columns else 0
+                    product_rating = matching_products[rating_col].max() if rating_col in matching_products.columns else 0
+                    
+                    if pd.isna(product_reviews):
+                        product_reviews = 0
+                    if pd.isna(product_rating):
+                        product_rating = 0
+                
+                # 성과 점수 계산 (리뷰수 × 평점)
+                performance_score = product_reviews * product_rating if product_rating > 0 else 0
+                
+                our_products_performance.append({
+                    'product_key': f"{product['제품명']}_{product['용량(ml)']}_{product['개수']}",
+                    'reviews': product_reviews,
+                    'rating': product_rating,
+                    'performance_score': performance_score
+                })
+            
+            # 성과 순위 정렬
+            our_products_performance.sort(key=lambda x: x['performance_score'], reverse=True)
+            
+            for _, product in our_unique_products.iterrows():
+                product_key = f"{product['제품명']}_{product['용량(ml)']}_{product['개수']}"
+                
+                # 기본 정보
                 product_info = {
                     '브랜드': product.get('브랜드', ''),
                     '제품명': product.get('제품명', ''),
@@ -196,7 +251,7 @@ class SujeonggwaMarketAnalyzer:
                     '개수': f"{product.get('개수', 0)}개" if pd.notna(product.get('개수')) else 'N/A'
                 }
                 
-                # 안전하게 가격 정보 추가
+                # 가격 정보
                 if '최저가(배송비 포함)' in product.index and pd.notna(product['최저가(배송비 포함)']):
                     product_info['최저가'] = f"{product['최저가(배송비 포함)']:,.0f}원"
                 else:
@@ -211,6 +266,59 @@ class SujeonggwaMarketAnalyzer:
                     product_info['판매플랫폼'] = ', '.join(product['플랫폼'])
                 else:
                     product_info['판매플랫폼'] = 'N/A'
+                
+                # 리뷰/평점 기반 확장 정보
+                product_performance = next((p for p in our_products_performance if p['product_key'] == product_key), None)
+                
+                if product_performance and review_col and rating_col:
+                    reviews = product_performance['reviews']
+                    rating = product_performance['rating']
+                    
+                    # 시장 반응도
+                    if market_avg_reviews > 0 and reviews > 0:
+                        market_ratio = reviews / market_avg_reviews
+                        if market_ratio >= 2.0:
+                            reaction_status = f"🔥 {reviews:,.0f}개 (시장평균의 {market_ratio:.1f}배)"
+                        elif market_ratio >= 1.0:
+                            reaction_status = f"📈 {reviews:,.0f}개 (시장평균의 {market_ratio:.1f}배)"
+                        else:
+                            reaction_status = f"📊 {reviews:,.0f}개 (시장평균의 {market_ratio:.1f}배)"
+                    else:
+                        reaction_status = f"{reviews:,.0f}개" if reviews > 0 else "리뷰 없음"
+                    
+                    product_info['시장반응도'] = reaction_status
+                    
+                    # 고객 만족도
+                    if rating > 0:
+                        if rating >= 4.5:
+                            satisfaction_status = f"⭐ {rating:.1f}점 (우수)"
+                        elif rating >= 4.0:
+                            satisfaction_status = f"⭐ {rating:.1f}점 (양호)"
+                        else:
+                            satisfaction_status = f"⚠️ {rating:.1f}점 (개선필요)"
+                    else:
+                        satisfaction_status = "평점 없음"
+                    
+                    product_info['고객만족도'] = satisfaction_status
+                    
+                    # 브랜드 내 순위
+                    rank = next((i+1 for i, p in enumerate(our_products_performance) if p['product_key'] == product_key), None)
+                    if rank and len(our_products_performance) > 1:
+                        if rank == 1:
+                            rank_status = f"🏆 1위/{len(our_products_performance)}개"
+                        elif rank <= 3:
+                            rank_status = f"🥉 {rank}위/{len(our_products_performance)}개"
+                        else:
+                            rank_status = f"📊 {rank}위/{len(our_products_performance)}개"
+                        
+                        product_info['브랜드내순위'] = rank_status
+                    else:
+                        product_info['브랜드내순위'] = "단일 제품"
+                else:
+                    # 리뷰/평점 데이터가 없는 경우
+                    product_info['시장반응도'] = "데이터 없음"
+                    product_info['고객만족도'] = "데이터 없음"
+                    product_info['브랜드내순위'] = "데이터 없음"
                 
                 our_product_details.append(product_info)
             
