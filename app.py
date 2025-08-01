@@ -30,7 +30,7 @@ class SujeonggwaMarketAnalyzer:
             "일반 판매가", "일반 판매가 단위가격(100ml당)", 
             "상시 할인가", "상시 할인가 단위가격(100ml당)",
             "배송비", "최저가(배송비 포함)", "최저가 단위가격(100ml당)", 
-            "공장형 여부", "리뷰 개수", "평점"  # 리뷰/평점 컬럼 추가
+            "공장형 여부", "리뷰 개수", "평점"
         ]
         self.our_brand = "서로"
     
@@ -93,7 +93,7 @@ class SujeonggwaMarketAnalyzer:
         # 1차: 수제 제품만 필터링 (공장형 여부 = 0)
         if '공장형 여부' in combined_df.columns:
             handmade_df = combined_df[combined_df['공장형 여부'] == 0].copy()
-            all_products_df = combined_df.copy()  # 전체 제품 (수제 + 공장형)
+            all_products_df = combined_df.copy()
         else:
             handmade_df = combined_df.copy()
             all_products_df = combined_df.copy()
@@ -148,16 +148,6 @@ class SujeonggwaMarketAnalyzer:
             if col in available_columns:
                 rating_col = col
                 break
-            return {
-                'category_name': category_name,
-                'total_products_analyzed': 0,
-                'total_unique_products': 0,
-                'our_products_count': 0,
-                'our_unique_products_count': 0,
-                'competitor_products_count': 0,
-                'competitor_unique_products_count': 0,
-                'business_insights': {}
-            }
         
         # 서로 브랜드 데이터 추출
         our_products = df[df['브랜드'] == self.our_brand].copy()
@@ -192,7 +182,6 @@ class SujeonggwaMarketAnalyzer:
             agg_dict['플랫폼'] = lambda x: list(x.unique())
         
         if not agg_dict:
-            # 최소한의 그룹핑만 수행
             unique_products = df.groupby(group_cols).size().reset_index(name='count')
         else:
             unique_products = df.groupby(group_cols).agg(agg_dict).reset_index()
@@ -450,7 +439,10 @@ class SujeonggwaMarketAnalyzer:
                                         comp_count = comp.get('개수', 'N/A')
                                         comp_price = comp.get('최저가 단위가격(100ml당)', 'N/A')
                                         comp_brand = comp.get('브랜드', 'N/A')
-                                        competitor_details.append(f"{comp_brand} {comp_volume}ml×{comp_count}개 ({comp_price:,.0f}원/100ml)")
+                                        if comp_price != 'N/A':
+                                            competitor_details.append(f"{comp_brand} {comp_volume}ml×{comp_count}개 ({comp_price:,.0f}원/100ml)")
+                                        else:
+                                            competitor_details.append(f"{comp_brand} {comp_volume}ml×{comp_count}개 (가격정보없음)")
                                     
                                     product_comp = {
                                         '제품': f"{our_product.get('제품명', '')} {our_volume}ml {our_count}개",
@@ -467,7 +459,7 @@ class SujeonggwaMarketAnalyzer:
                                     }
                                     our_product_competitiveness.append(product_comp)
                         except Exception as e:
-                            continue  # 개별 제품 오류는 건너뛰기
+                            continue
                     
                     if our_product_competitiveness:
                         competitiveness[platform] = our_product_competitiveness
@@ -477,7 +469,6 @@ class SujeonggwaMarketAnalyzer:
         # 3. 용량별/개수별 시장 현황
         if '용량(ml)' in df.columns and '개수' in df.columns:
             try:
-                # NaN 값 제거
                 df_for_volume = df.dropna(subset=['용량(ml)', '개수'])
                 
                 if not df_for_volume.empty:
@@ -490,13 +481,11 @@ class SujeonggwaMarketAnalyzer:
                         count = combo['개수']
                         total_products = combo['제품수']
                         
-                        # 해당 조합에서 우리 제품 수
                         our_products_in_combo = len(our_products[
                             (our_products['용량(ml)'] == volume) & 
                             (our_products['개수'] == count)
                         ])
                         
-                        # 해당 조합에서 가격 분포
                         combo_products = df_for_volume[
                             (df_for_volume['용량(ml)'] == volume) & 
                             (df_for_volume['개수'] == count)
@@ -541,299 +530,12 @@ class SujeonggwaMarketAnalyzer:
             except Exception as e:
                 st.warning(f"용량별 시장 분석 중 오류: {str(e)}")
         
-        # 4. 브랜드별 시장 점유율 (고도화된 다차원 분석)
+        # 4. 브랜드별 시장 점유율 분석 (기본만 유지)
         try:
-            # 기존 제품 수 기준 점유율
             brand_share = unique_products['브랜드'].value_counts()
             total_unique_products = len(unique_products)
-            
-            # 리뷰/평점 데이터 준비 및 정제
-            df_with_reviews = df.copy()
-            
-            # 리뷰 개수와 평점 컬럼 확인 및 정제 (디버깅 로그 추가)
-            review_col = None
-            rating_col = None
-            
-            # 실제 컬럼명 확인 (디버깅용)
-            available_columns = list(df_with_reviews.columns)
-            
-            for col in ['리뷰 개수', '리뷰개수', 'review_count', '리뷰수']:
-                if col in available_columns:
-                    review_col = col
-                    break
-            
-            for col in ['평점', '평균평점', 'rating', '별점']:
-                if col in available_columns:
-                    rating_col = col
-                    break
-            
-            # 디버깅 정보 (실제 운영에서는 제거 가능)
-            if not review_col or not rating_col:
-                st.info(f"🔍 디버깅 정보: 사용 가능한 컬럼들: {available_columns}")
-                st.info(f"🔍 찾은 리뷰 컬럼: {review_col}, 찾은 평점 컬럼: {rating_col}")
-            
-            # 데이터 정제
-            if review_col and review_col in df_with_reviews.columns:
-                df_with_reviews[review_col] = pd.to_numeric(df_with_reviews[review_col], errors='coerce').fillna(0)
-            if rating_col and rating_col in df_with_reviews.columns:
-                df_with_reviews[rating_col] = pd.to_numeric(df_with_reviews[rating_col], errors='coerce').fillna(0)
-            
-            # 브랜드별 종합 분석
-            brand_analysis = {}
-            
-            for brand in df_with_reviews['브랜드'].unique():
-                if pd.isna(brand) or brand == '브랜드':  # 헤더 제외
-                    continue
-                
-                brand_data = df_with_reviews[df_with_reviews['브랜드'] == brand]
-                brand_unique = unique_products[unique_products['브랜드'] == brand]
-                
-                analysis = {
-                    '제품_수': len(brand_unique),
-                    '제품_수_점유율': (len(brand_unique) / total_unique_products) * 100 if total_unique_products > 0 else 0
-                }
-                
-                # 리뷰 기반 분석 (리뷰 개수 컬럼이 있는 경우)
-                if review_col and not brand_data[review_col].isna().all():
-                    total_reviews = brand_data[review_col].sum()
-                    avg_reviews_per_product = brand_data[review_col].mean()
-                    
-                    analysis.update({
-                        '총_리뷰수': int(total_reviews),
-                        '제품당_평균_리뷰수': round(avg_reviews_per_product, 1),
-                        '리뷰_기반_인지도': total_reviews  # 나중에 전체 대비 비율로 변환
-                    })
-                
-                # 평점 기반 분석 (평점 컬럼이 있는 경우)
-                if rating_col and not brand_data[rating_col].isna().all():
-                    # 평점이 0이 아닌 제품들만으로 평균 계산
-                    valid_ratings = brand_data[brand_data[rating_col] > 0][rating_col]
-                    
-                    if len(valid_ratings) > 0:
-                        avg_rating = valid_ratings.mean()
-                        rating_count = len(valid_ratings)  # 평점 있는 제품 수
-                        
-                        analysis.update({
-                            '평균_평점': round(avg_rating, 2),
-                            '평점_있는_제품수': rating_count,
-                            '평점_커버리지': round((rating_count / len(brand_data)) * 100, 1)  # 평점 있는 제품 비율
-                        })
-                
-                # 시장 영향력 점수 계산 (리뷰와 평점이 모두 있는 경우)
-                if review_col and rating_col:
-                    # 각 제품별로 (리뷰수 × 평점) 계산 후 합산
-                    brand_data_clean = brand_data.copy()
-                    brand_data_clean = brand_data_clean[
-                        (brand_data_clean[review_col].notna()) & 
-                        (brand_data_clean[rating_col].notna()) &
-                        (brand_data_clean[rating_col] > 0)
-                    ]
-                    
-                    if not brand_data_clean.empty:
-                        # 영향력 점수 = Σ(리뷰수 × 평점)
-                        impact_scores = brand_data_clean[review_col] * brand_data_clean[rating_col]
-                        total_impact = impact_scores.sum()
-                        
-                        analysis['시장_영향력_점수'] = round(total_impact, 1)
-                
-                brand_analysis[brand] = analysis
-            
-            # 전체 시장 대비 비율 계산
-            if review_col:
-                total_market_reviews = sum([data.get('총_리뷰수', 0) for data in brand_analysis.values()])
-                for brand, data in brand_analysis.items():
-                    if '총_리뷰수' in data and total_market_reviews > 0:
-                        data['리뷰_점유율'] = round((data['총_리뷰수'] / total_market_reviews) * 100, 1)
-            
-            if review_col and rating_col:
-                total_market_impact = sum([data.get('시장_영향력_점수', 0) for data in brand_analysis.values()])
-                for brand, data in brand_analysis.items():
-                    if '시장_영향력_점수' in data and total_market_impact > 0:
-                        data['영향력_점유율'] = round((data['시장_영향력_점수'] / total_market_impact) * 100, 1)
-            
-            # 상위 10개 브랜드만 선택 (제품 수 기준)
-            top_brands = sorted(brand_analysis.items(), key=lambda x: x[1]['제품_수'], reverse=True)[:10]
-            
-            # 최종 결과 구성 + 플랫폼별 분석 추가
-            enhanced_market_share = {}
-            for brand, data in top_brands:
-                enhanced_market_share[brand] = data
-            
-            # 플랫폼별 브랜드 분석 (다차원 고도화)
-            platform_analysis = {}
-            
-            if '플랫폼' in df.columns:
-                platforms = df['플랫폼'].unique()
-                
-                for platform in platforms:
-                    if pd.isna(platform):
-                        continue
-                    
-                    # 해당 플랫폼 데이터만 추출
-                    platform_data = df[df['플랫폼'] == platform].copy()
-                    platform_unique = unique_products[unique_products['플랫폼'].apply(
-                        lambda x: platform in x if isinstance(x, list) else x == platform
-                    )]
-                    
-                    if platform_unique.empty:
-                        continue
-                    
-                    # 플랫폼 내 브랜드별 종합 분석
-                    platform_brand_analysis = {}
-                    
-                    for brand in platform_data['브랜드'].unique():
-                        if pd.isna(brand) or brand == '브랜드':
-                            continue
-                        
-                        brand_platform_data = platform_data[platform_data['브랜드'] == brand]
-                        brand_unique_data = platform_unique[platform_unique['브랜드'] == brand]
-                        
-                        analysis = {
-                            '제품_수': len(brand_unique_data)
-                        }
-                        
-                        # 리뷰 기반 분석
-                        if review_col and review_col in brand_platform_data.columns:
-                            total_reviews = brand_platform_data[review_col].sum()
-                            valid_reviews = brand_platform_data[brand_platform_data[review_col] > 0]
-                            avg_reviews = valid_reviews[review_col].mean() if not valid_reviews.empty else 0
-                            
-                            analysis.update({
-                                '총_리뷰수': int(total_reviews) if not pd.isna(total_reviews) else 0,
-                                '평균_리뷰수': round(avg_reviews, 1) if not pd.isna(avg_reviews) else 0
-                            })
-                        
-                        # 평점 기반 분석  
-                        if rating_col and rating_col in brand_platform_data.columns:
-                            valid_ratings = brand_platform_data[brand_platform_data[rating_col] > 0]
-                            avg_rating = valid_ratings[rating_col].mean() if not valid_ratings.empty else 0
-                            
-                            analysis.update({
-                                '평균_평점': round(avg_rating, 2) if not pd.isna(avg_rating) else 0,
-                                '평점_제품수': len(valid_ratings)
-                            })
-                        
-                        # 종합 영향력 점수 (리뷰 × 평점)
-                        if review_col and rating_col:
-                            impact_scores = []
-                            for _, product in brand_platform_data.iterrows():
-                                reviews = product.get(review_col, 0) if not pd.isna(product.get(review_col, 0)) else 0
-                                rating = product.get(rating_col, 0) if not pd.isna(product.get(rating_col, 0)) else 0
-                                if reviews > 0 and rating > 0:
-                                    impact_scores.append(reviews * rating)
-                            
-                            total_impact = sum(impact_scores) if impact_scores else 0
-                            analysis['종합_영향력'] = round(total_impact, 1)
-                        
-                        platform_brand_analysis[brand] = analysis
-                    
-                    # 플랫폼별 순위 계산
-                    platform_rankings = {
-                        '제품수_순위': {},
-                        '리뷰수_순위': {},
-                        '평점_순위': {},
-                        '영향력_순위': {}
-                    }
-                    
-                    # 제품 수 순위
-                    product_ranking = sorted(platform_brand_analysis.items(), 
-                                           key=lambda x: x[1]['제품_수'], reverse=True)
-                    for rank, (brand, _) in enumerate(product_ranking, 1):
-                        platform_rankings['제품수_순위'][brand] = rank
-                    
-                    # 리뷰 수 순위  
-                    if review_col:
-                        review_ranking = sorted(platform_brand_analysis.items(),
-                                              key=lambda x: x[1].get('총_리뷰수', 0), reverse=True)
-                        for rank, (brand, _) in enumerate(review_ranking, 1):
-                            if platform_brand_analysis[brand].get('총_리뷰수', 0) > 0:
-                                platform_rankings['리뷰수_순위'][brand] = rank
-                    
-                    # 평점 순위
-                    if rating_col:
-                        rating_ranking = sorted(platform_brand_analysis.items(),
-                                              key=lambda x: x[1].get('평균_평점', 0), reverse=True)
-                        for rank, (brand, _) in enumerate(rating_ranking, 1):
-                            if platform_brand_analysis[brand].get('평균_평점', 0) > 0:
-                                platform_rankings['평점_순위'][brand] = rank
-                    
-                    # 종합 영향력 순위
-                    if review_col and rating_col:
-                        impact_ranking = sorted(platform_brand_analysis.items(),
-                                              key=lambda x: x[1].get('종합_영향력', 0), reverse=True)
-                        for rank, (brand, _) in enumerate(impact_ranking, 1):
-                            if platform_brand_analysis[brand].get('종합_영향력', 0) > 0:
-                                platform_rankings['영향력_순위'][brand] = rank
-                    
-                    # 서로 브랜드 종합 분석
-                    seoro_analysis = {}
-                    if "서로" in platform_brand_analysis:
-                        seoro_data = platform_brand_analysis["서로"]
-                        
-                        seoro_analysis = {
-                            '제품수_순위': platform_rankings['제품수_순위'].get("서로", None),
-                            '리뷰수_순위': platform_rankings['리뷰수_순위'].get("서로", None),
-                            '평점_순위': platform_rankings['평점_순위'].get("서로", None),
-                            '영향력_순위': platform_rankings['영향력_순위'].get("서로", None),
-                            '제품수': seoro_data.get('제품_수', 0),
-                            '총_리뷰수': seoro_data.get('총_리뷰수', 0),
-                            '평균_평점': seoro_data.get('평균_평점', 0),
-                            '종합_영향력': seoro_data.get('종합_영향력', 0)
-                        }
-                        
-                        # 플랫폼별 전략 제안 (다차원 고려)
-                        product_rank = seoro_analysis['제품수_순위']
-                        review_rank = seoro_analysis['리뷰수_순위'] 
-                        rating_rank = seoro_analysis['평점_순위']
-                        impact_rank = seoro_analysis['영향력_순위']
-                        
-                        # 종합 점수 계산 (순위가 낮을수록 좋음)
-                        ranks = [r for r in [product_rank, review_rank, rating_rank, impact_rank] if r is not None]
-                        avg_rank = sum(ranks) / len(ranks) if ranks else None
-                        
-                        strategy = ""
-                        if avg_rank:
-                            if avg_rank <= 2:
-                                if product_rank == 1 and review_rank and review_rank <= 2:
-                                    strategy = "🏆 종합 리더 - 시장 지배력 유지 및 확장"
-                                elif rating_rank == 1:
-                                    strategy = "⭐ 품질 리더 - 프리미엄 포지셔닝 강화"
-                                else:
-                                    strategy = "🥉 강자 - 약점 보완으로 1위 도전"
-                            elif avg_rank <= 4:
-                                if review_rank and review_rank > 5:
-                                    strategy = "📈 도전자 - 마케팅 집중으로 인지도 확대"
-                                elif rating_rank and rating_rank > 5:
-                                    strategy = "🔧 개선 필요 - 품질 향상 우선"
-                                else:
-                                    strategy = "📊 중위권 - 차별화 전략 필요"
-                            else:
-                                strategy = "🚀 신규/도전 - 집중 공략으로 점유율 확대"
-                        else:
-                            strategy = "🆕 신규 진입 - 틈새 시장 기회 탐색"
-                        
-                        seoro_analysis['전략_제안'] = strategy
-                    
-                    platform_analysis[platform] = {
-                        '브랜드_분석': platform_brand_analysis,
-                        '순위_정보': platform_rankings,
-                        '서로_분석': seoro_analysis,
-                        '총_브랜드수': len(platform_brand_analysis),
-                        '총_제품수': len(platform_unique)
-                    }
-            
-            category_results['business_insights']['enhanced_market_share'] = enhanced_market_share
-            category_results['business_insights']['platform_analysis'] = platform_analysis  # 고도화된 분석
-            category_results['business_insights']['market_analysis_metadata'] = {
-                'has_review_data': review_col is not None,
-                'has_rating_data': rating_col is not None,
-                'review_column': review_col,
-                'rating_column': rating_col,
-                'total_brands_analyzed': len(brand_analysis)
-            }
-            
-            # 기존 market_share도 유지 (하위 호환성)
             brand_share_percent = {}
+            
             for brand, count in brand_share.head(10).items():
                 if pd.notna(brand) and total_unique_products > 0:
                     percentage = (count / total_unique_products) * 100
@@ -846,23 +548,6 @@ class SujeonggwaMarketAnalyzer:
             
         except Exception as e:
             st.warning(f"브랜드별 점유율 분석 중 오류: {str(e)}")
-            # 기존 분석 결과라도 제공
-            try:
-                brand_share = unique_products['브랜드'].value_counts()
-                total_unique_products = len(unique_products)
-                brand_share_percent = {}
-                
-                for brand, count in brand_share.head(10).items():
-                    if pd.notna(brand) and total_unique_products > 0:
-                        percentage = (count / total_unique_products) * 100
-                        brand_share_percent[brand] = {
-                            '제품_수': int(count),
-                            '점유율_퍼센트': round(percentage, 1)
-                        }
-                
-                category_results['business_insights']['market_share'] = brand_share_percent
-            except:
-                pass
         
         return category_results
 
@@ -877,20 +562,15 @@ class SujeonggwaMarketAnalyzer:
                 "Accept": "application/vnd.github.v3+json"
             }
             
-            # 저장소 내용 조회
             response = requests.get(GITHUB_API_URL, headers=headers)
             
             if response.status_code == 200:
                 files = response.json()
                 
-                # 분석 결과 파일들 찾기
                 analysis_files = [f for f in files if f['name'].startswith('analysis_results') and f['name'].endswith('.json')]
                 
                 if analysis_files:
-                    # 최신 파일 선택 (파일명의 타임스탬프 기준)
                     latest_file = max(analysis_files, key=lambda x: x['name'])
-                    
-                    # 파일 내용 가져오기
                     file_response = requests.get(latest_file['download_url'])
                     
                     if file_response.status_code == 200:
@@ -913,16 +593,12 @@ class SujeonggwaMarketAnalyzer:
                 "Accept": "application/vnd.github.v3+json"
             }
             
-            # 저장소 내용 조회
             response = requests.get(GITHUB_API_URL, headers=headers)
             
             if response.status_code == 200:
                 files = response.json()
-                
-                # 분석 결과 파일들 찾기 (analysis_results로 시작하는 JSON 파일)
                 analysis_files = [f for f in files if f['name'].startswith('analysis_results') and f['name'].endswith('.json')]
                 
-                # 각 파일 삭제
                 for file_info in analysis_files:
                     delete_url = f"{GITHUB_API_URL}/{file_info['name']}"
                     delete_data = {
@@ -943,17 +619,6 @@ class SujeonggwaMarketAnalyzer:
     def save_to_github(self, content, filename):
         """GitHub에 분석 결과 저장"""
         if not GITHUB_TOKEN:
-            st.error("""
-            🔧 **GitHub 연동 설정이 필요합니다**
-            
-            **Streamlit Cloud에서 설정하는 방법:**
-            1. 앱 대시보드 → Settings → Secrets
-            2. 다음 내용 추가:
-            ```
-            GITHUB_TOKEN = "your_github_token"
-            GITHUB_REPO = "username/repo-name"
-            ```
-            """)
             return False
         
         try:
@@ -975,7 +640,7 @@ class SujeonggwaMarketAnalyzer:
             if response.status_code in [200, 201]:
                 return True
             else:
-                st.error(f"GitHub 업로드 실패: {response.status_code} - {response.text}")
+                st.error(f"GitHub 업로드 실패: {response.status_code}")
                 return False
                 
         except Exception as e:
@@ -985,18 +650,15 @@ class SujeonggwaMarketAnalyzer:
 def show_analysis_results(analysis_results, json_content, timestamp, github_success):
     """분석 결과를 표시하는 함수"""
     
-    # 안전성 체크
     if not analysis_results:
         st.error("분석 결과가 없습니다.")
         return
     
-    # 결과 대시보드
     if github_success:
         st.success("✅ 분석 완료 및 GitHub 저장 성공!")
     else:
         st.warning("⚠️ 분석 완료, GitHub 저장 실패")
     
-    # 카테고리 선택 탭
     tab_handmade, tab_all = st.tabs(["🥛 수제 제품 분석", "🏭 전체 제품 분석 (수제+공장형)"])
     
     with tab_handmade:
@@ -1031,7 +693,7 @@ def show_category_analysis(category_data, category_type):
     
     st.markdown("---")
     
-    # 통합된 우리 제품 현황 (단일 탭)
+    # 통합된 우리 제품 현황
     st.subheader(f"🥤 서로 브랜드 종합 현황 ({category_type})")
     
     business_insights = category_data.get('business_insights', {})
@@ -1042,10 +704,8 @@ def show_category_analysis(category_data, category_type):
         product_details = business_insights['our_product_details']
         
         if product_details:
-            # 제품 현황 테이블
             details_df = pd.DataFrame(product_details)
             st.dataframe(details_df, use_container_width=True)
-            
             st.info(f"💡 총 {len(product_details)}개의 서로 브랜드 제품이 분석되었습니다.")
         else:
             st.warning("서로 브랜드 제품이 없습니다.")
@@ -1090,7 +750,6 @@ def show_category_analysis(category_data, category_type):
                         with col3:
                             st.metric("가격 차이", product.get('가격차이', 'N/A'), product.get('가격차이_퍼센트', 'N/A'))
                             
-                            # 시장 포지션 색상 표시 (이미 이모지 포함됨)
                             position = product.get('시장_포지션', 'N/A')
                             competitor_count = product.get('경쟁사_수', 0)
                             
@@ -1134,7 +793,7 @@ def show_category_analysis(category_data, category_type):
             
             if untapped_markets:
                 st.markdown("#### 💡 진출 기회 있는 시장")
-                for market in untapped_markets[:5]:  # 상위 5개만 표시
+                for market in untapped_markets[:5]:
                     volume_count = market.get('용량_개수', 'N/A')
                     total_products = market.get('총_제품수', 0)
                     avg_price = market.get('평균_단위가격', 'N/A')
@@ -1146,516 +805,36 @@ def show_category_analysis(category_data, category_type):
     
     st.markdown("---")
     
-    # 4. 브랜드별 시장 점유율 (고도화된 분석)
-    st.markdown("### 🏆 브랜드별 시장 분석")
+    # 4. 브랜드별 시장 분석
+    st.markdown("### 🏆 브랜드별 시장 점유율")
     
-    if 'enhanced_market_share' in business_insights:
-        enhanced_data = business_insights['enhanced_market_share']
-        metadata = business_insights.get('market_analysis_metadata', {})
-        
-        if enhanced_data:
-            # 분석 개요
-            has_review = metadata.get('has_review_data', False)
-            has_rating = metadata.get('has_rating_data', False)
-            
-            if has_review and has_rating:
-                st.success("📊 **종합 분석**: 제품 수 + 리뷰 + 평점 데이터 모두 활용")
-            elif has_review or has_rating:
-                st.info(f"📊 **부분 분석**: 제품 수 + {'리뷰' if has_review else '평점'} 데이터 활용")
-            else:
-                st.warning("📊 **기본 분석**: 제품 수만 활용 (리뷰/평점 데이터 없음)")
-            
-            analysis_tabs = []
-            tab_names = ["📊 전체 시장 통합"]
-            
-            if has_review:
-                tab_names.append("👥 리뷰 기반 인지도")
-            if has_rating:
-                tab_names.append("⭐ 평점 기준 품질")
-            if has_review and has_rating:
-                tab_names.append("🚀 종합 영향력")
-            
-            # 플랫폼별 분석 탭 추가
-            if 'platform_analysis' in business_insights:
-                tab_names.append("🏪 플랫폼별 분석")
-            
-            analysis_tabs = st.tabs(tab_names)
-            
-            with analysis_tabs[0]:  # 전체 시장 통합 (기존)
-                st.markdown("#### 📊 제품 수 기준 시장 점유율")
-                
-                product_share_df = pd.DataFrame([
-                    {
-                        '브랜드': brand, 
-                        '제품 수': data.get('제품_수', 0),
-                        '점유율(%)': f"{data.get('제품_수_점유율', 0):.1f}%"
-                    }
-                    for brand, data in enhanced_data.items()
-                ])
-                
-                st.dataframe(product_share_df, use_container_width=True)
-                
-                # 서로 브랜드 순위
-                seoro_rank = None
-                for idx, (brand, _) in enumerate(enhanced_data.items(), 1):
-                    if brand == "서로":
-                        seoro_rank = idx
-                        break
-                
-                if seoro_rank:
-                    if seoro_rank == 1:
-                        st.success(f"🏆 서로 브랜드가 제품 수 기준 **{seoro_rank}위**입니다!")
-                    elif seoro_rank <= 3:
-                        st.info(f"🥉 서로 브랜드가 제품 수 기준 **{seoro_rank}위**입니다.")
-                    else:
-                        st.warning(f"📈 서로 브랜드가 제품 수 기준 **{seoro_rank}위**입니다.")
-            
-            # 리뷰 기반 분석 탭
-            if has_review and len(analysis_tabs) > 1:
-                with analysis_tabs[1]:
-                    st.markdown("#### 👥 리뷰 기반 시장 인지도")
-                    
-                    review_data = []
-                    for brand, data in enhanced_data.items():
-                        if '총_리뷰수' in data:
-                            review_data.append({
-                                '브랜드': brand,
-                                '총 리뷰 수': f"{data.get('총_리뷰수', 0):,}개",
-                                '제품당 평균 리뷰': f"{data.get('제품당_평균_리뷰수', 0):.1f}개",
-                                '리뷰 점유율(%)': f"{data.get('리뷰_점유율', 0):.1f}%"
-                            })
-                    
-                    if review_data:
-                        review_df = pd.DataFrame(review_data)
-                        st.dataframe(review_df, use_container_width=True)
-                        
-                        st.info("💡 **리뷰 기반 인지도**: 실제 구매 고객의 참여도를 반영한 지표")
-                    else:
-                        st.warning("리뷰 데이터가 충분하지 않습니다.")
-            
-            # 평점 기반 분석 탭
-            if has_rating:
-                rating_tab_idx = 1 if not has_review else 2
-                if len(analysis_tabs) > rating_tab_idx:
-                    with analysis_tabs[rating_tab_idx]:
-                        st.markdown("#### ⭐ 평점 기준 품질 순위")
-                        
-                        rating_data = []
-                        for brand, data in enhanced_data.items():
-                            if '평균_평점' in data:
-                                rating_data.append({
-                                    '브랜드': brand,
-                                    '평균 평점': f"{data.get('평균_평점', 0):.2f}점",
-                                    '평점 있는 제품 수': f"{data.get('평점_있는_제품수', 0)}개",
-                                    '평점 커버리지': f"{data.get('평점_커버리지', 0):.1f}%"
-                                })
-                        
-                        if rating_data:
-                            # 평점 순으로 정렬
-                            rating_data.sort(key=lambda x: float(x['평균 평점'].replace('점', '')), reverse=True)
-                            rating_df = pd.DataFrame(rating_data)
-                            st.dataframe(rating_df, use_container_width=True)
-                            
-                            # 서로 브랜드 평점 순위
-                            seoro_rating_rank = None
-                            for idx, item in enumerate(rating_data, 1):
-                                if item['브랜드'] == "서로":
-                                    seoro_rating_rank = idx
-                                    seoro_rating = float(item['평균 평점'].replace('점', ''))
-                                    break
-                            
-                            if seoro_rating_rank:
-                                if seoro_rating >= 4.5:
-                                    st.success(f"⭐ 서로 브랜드 평점: **{seoro_rating:.2f}점** ({seoro_rating_rank}위) - 우수한 품질!")
-                                elif seoro_rating >= 4.0:
-                                    st.info(f"⭐ 서로 브랜드 평점: **{seoro_rating:.2f}점** ({seoro_rating_rank}위) - 양호한 품질")
-                                else:
-                                    st.warning(f"⭐ 서로 브랜드 평점: **{seoro_rating:.2f}점** ({seoro_rating_rank}위) - 품질 개선 필요")
-                            
-                            st.info("💡 **품질 지표**: 실제 구매 고객의 만족도를 반영한 지표")
-                        else:
-                            st.warning("평점 데이터가 충분하지 않습니다.")
-            
-            # 종합 영향력 분석 탭
-            if has_review and has_rating:
-                impact_tab_idx = 3
-                if len(analysis_tabs) > impact_tab_idx:
-                    with analysis_tabs[impact_tab_idx]:
-                        st.markdown("#### 🚀 종합 시장 영향력")
-                        
-                        impact_data = []
-                        for brand, data in enhanced_data.items():
-                            if '시장_영향력_점수' in data:
-                                impact_data.append({
-                                    '브랜드': brand,
-                                    '영향력 점수': f"{data.get('시장_영향력_점수', 0):,.1f}",
-                                    '영향력 점유율(%)': f"{data.get('영향력_점유율', 0):.1f}%",
-                                    '제품 수': f"{data.get('제품_수', 0)}개",
-                                    '총 리뷰': f"{data.get('총_리뷰수', 0):,}개",
-                                    '평균 평점': f"{data.get('평균_평점', 0):.2f}점"
-                                })
-                        
-                        if impact_data:
-                            # 영향력 점수 순으로 정렬
-                            impact_data.sort(key=lambda x: float(x['영향력 점수'].replace(',', '')), reverse=True)
-                            impact_df = pd.DataFrame(impact_data)
-                            st.dataframe(impact_df, use_container_width=True)
-                            
-                            # 서로 브랜드 영향력 순위
-                            seoro_impact_rank = None
-                            for idx, item in enumerate(impact_data, 1):
-                                if item['브랜드'] == "서로":
-                                    seoro_impact_rank = idx
-                                    seoro_impact_share = float(item['영향력 점유율(%)'].replace('%', ''))
-                                    break
-                            
-                            if seoro_impact_rank:
-                                if seoro_impact_rank == 1:
-                                    st.success(f"🚀 서로 브랜드가 종합 영향력 **1위**! (점유율: {seoro_impact_share:.1f}%)")
-                                elif seoro_impact_rank <= 3:
-                                    st.info(f"🚀 서로 브랜드 종합 영향력 **{seoro_impact_rank}위** (점유율: {seoro_impact_share:.1f}%)")
-                                else:
-                                    st.warning(f"🚀 서로 브랜드 종합 영향력 **{seoro_impact_rank}위** (점유율: {seoro_impact_share:.1f}%)")
-                            
-                            st.info("💡 **종합 영향력**: 리뷰 수 × 평점을 고려한 실제 시장 영향력 지표")
-                        else:
-                            st.warning("종합 영향력 계산에 필요한 데이터가 부족합니다.")
-            
-            # 플랫폼별 분석 탭 (고도화된 다차원 분석)
-            if 'platform_analysis' in business_insights and len(analysis_tabs) > (4 if has_review and has_rating else 3 if has_review or has_rating else 1):
-                platform_tab_idx = len(analysis_tabs) - 1
-                with analysis_tabs[platform_tab_idx]:
-                    st.markdown("#### 🏪 플랫폼별 다차원 브랜드 분석")
-                    
-                    platform_data = business_insights['platform_analysis']
-                    
-                    if platform_data:
-                        # 서로 브랜드 플랫폼별 종합 현황
-                        st.markdown("##### 🎯 서로 브랜드 플랫폼별 종합 현황")
-                        
-                        summary_data = []
-                        for platform, data in platform_data.items():
-                            seoro_info = data.get('서로_분석', {})
-                            
-                            if seoro_info:
-                                # 각 순위 정보 추출
-                                product_rank = seoro_info.get('제품수_순위', '-')
-                                review_rank = seoro_info.get('리뷰수_순위', '-')
-                                rating_rank = seoro_info.get('평점_순위', '-')
-                                impact_rank = seoro_info.get('영향력_순위', '-')
-                                
-                                # 종합 성과 계산 (순위가 있는 것들의 평균)
-                                ranks = [r for r in [product_rank, review_rank, rating_rank, impact_rank] if isinstance(r, int)]
-                                avg_rank = round(sum(ranks) / len(ranks), 1) if ranks else None
-                                
-                                # 플랫폼 상태 이모지
-                                if avg_rank and avg_rank <= 2:
-                                    platform_emoji = "🏆"
-                                elif avg_rank and avg_rank <= 4:
-                                    platform_emoji = "🥉"
-                                else:
-                                    platform_emoji = "📈"
-                                
-                                summary_data.append({
-                                    '플랫폼': f"{platform_emoji} {platform}",
-                                    '제품수 순위': f"{product_rank}위" if isinstance(product_rank, int) else '-',
-                                    '리뷰수 순위': f"{review_rank}위" if isinstance(review_rank, int) else '-',
-                                    '평점 순위': f"{rating_rank}위" if isinstance(rating_rank, int) else '-',
-                                    '종합 영향력': f"{impact_rank}위" if isinstance(impact_rank, int) else '-',
-                                    '종합 평가': f"{avg_rank}위" if avg_rank else "데이터 부족"
-                                })
-                            else:
-                                summary_data.append({
-                                    '플랫폼': f"📊 {platform}",
-                                    '제품수 순위': '순위권 밖',
-                                    '리뷰수 순위': '-',
-                                    '평점 순위': '-', 
-                                    '종합 영향력': '-',
-                                    '종합 평가': '진출 필요'
-                                })
-                        
-                        summary_df = pd.DataFrame(summary_data)
-                        st.dataframe(summary_df, use_container_width=True)
-                        
-                        # 플랫폼별 상세 분석
-                        st.markdown("##### 📊 플랫폼별 상세 분석")
-                        
-                        for platform, data in platform_data.items():
-                            seoro_info = data.get('서로_분석', {})
-                            
-                            with st.expander(f"🏪 {platform} 다차원 분석"):
-                                
-                                if seoro_info:
-                                    # 전략 제안
-                                    strategy = seoro_info.get('전략_제안', '')
-                                    if strategy:
-                                        if "🏆" in strategy or "리더" in strategy:
-                                            st.success(f"**전략**: {strategy}")
-                                        elif "🥉" in strategy or "강자" in strategy:
-                                            st.info(f"**전략**: {strategy}")
-                                        elif "📈" in strategy or "도전" in strategy:
-                                            st.warning(f"**전략**: {strategy}")
-                                        else:
-                                            st.error(f"**전략**: {strategy}")
-                                    
-                                    # 서로 브랜드 세부 성과
-                                    col1, col2, col3, col4 = st.columns(4)
-                                    
-                                    with col1:
-                                        product_rank = seoro_info.get('제품수_순위', '-')
-                                        product_count = seoro_info.get('제품수', 0)
-                                        if isinstance(product_rank, int):
-                                            st.metric("제품 수 순위", f"{product_rank}위", f"{product_count}개 제품")
-                                        else:
-                                            st.metric("제품 수 순위", "순위권 밖", f"{product_count}개 제품")
-                                    
-                                    with col2:
-                                        review_rank = seoro_info.get('리뷰수_순위', '-')
-                                        total_reviews = seoro_info.get('총_리뷰수', 0)
-                                        if isinstance(review_rank, int) and total_reviews > 0:
-                                            st.metric("리뷰 수 순위", f"{review_rank}위", f"{total_reviews:,}개 리뷰")
-                                        else:
-                                            st.metric("리뷰 수 순위", "데이터 없음", f"{total_reviews:,}개 리뷰")
-                                    
-                                    with col3:
-                                        rating_rank = seoro_info.get('평점_순위', '-')
-                                        avg_rating = seoro_info.get('평균_평점', 0)
-                                        if isinstance(rating_rank, int) and avg_rating > 0:
-                                            st.metric("평점 순위", f"{rating_rank}위", f"{avg_rating:.2f}점")
-                                        else:
-                                            st.metric("평점 순위", "데이터 없음", f"{avg_rating:.2f}점")
-                                    
-                                    with col4:
-                                        impact_rank = seoro_info.get('영향력_순위', '-')
-                                        impact_score = seoro_info.get('종합_영향력', 0)
-                                        if isinstance(impact_rank, int) and impact_score > 0:
-                                            st.metric("종합 영향력", f"{impact_rank}위", f"{impact_score:,.1f}점")
-                                        else:
-                                            st.metric("종합 영향력", "데이터 없음", f"{impact_score:,.1f}점")
-                                    
-                                    # 플랫폼 내 상위 브랜드 (각 지표별)
-                                    st.markdown("**📊 플랫폼 내 주요 경쟁사 현황:**")
-                                    
-                                    # 탭으로 각 지표별 순위 표시
-                                    rank_tabs = st.tabs(["제품 수", "리뷰 수", "평점", "종합 영향력"])
-                                    
-                                    brand_analysis = data.get('브랜드_분석', {})
-                                    rankings = data.get('순위_정보', {})
-                                    
-                                    with rank_tabs[0]:  # 제품 수
-                                        product_ranking = sorted(brand_analysis.items(), 
-                                                               key=lambda x: x[1].get('제품_수', 0), reverse=True)[:5]
-                                        product_data = []
-                                        for rank, (brand, info) in enumerate(product_ranking, 1):
-                                            brand_display = f"🎯 {brand}" if brand == "서로" else brand
-                                            product_data.append({
-                                                '순위': f"{rank}위",
-                                                '브랜드': brand_display,
-                                                '제품 수': f"{info.get('제품_수', 0)}개"
-                                            })
-                                        if product_data:
-                                            st.dataframe(pd.DataFrame(product_data), use_container_width=True)
-                                    
-                                    with rank_tabs[1]:  # 리뷰 수
-                                        if review_col:
-                                            review_ranking = sorted(brand_analysis.items(),
-                                                                  key=lambda x: x[1].get('총_리뷰수', 0), reverse=True)[:5]
-                                            review_data = []
-                                            for rank, (brand, info) in enumerate(review_ranking, 1):
-                                                if info.get('총_리뷰수', 0) > 0:
-                                                    brand_display = f"🎯 {brand}" if brand == "서로" else brand
-                                                    review_data.append({
-                                                        '순위': f"{rank}위",
-                                                        '브랜드': brand_display,
-                                                        '총 리뷰 수': f"{info.get('총_리뷰수', 0):,}개"
-                                                    })
-                                            if review_data:
-                                                st.dataframe(pd.DataFrame(review_data), use_container_width=True)
-                                            else:
-                                                st.info("리뷰 데이터가 없습니다.")
-                                        else:
-                                            st.info("리뷰 데이터가 없습니다.")
-                                    
-                                    with rank_tabs[2]:  # 평점
-                                        if rating_col:
-                                            rating_ranking = sorted(brand_analysis.items(),
-                                                                  key=lambda x: x[1].get('평균_평점', 0), reverse=True)[:5]
-                                            rating_data = []
-                                            for rank, (brand, info) in enumerate(rating_ranking, 1):
-                                                if info.get('평균_평점', 0) > 0:
-                                                    brand_display = f"🎯 {brand}" if brand == "서로" else brand
-                                                    rating_data.append({
-                                                        '순위': f"{rank}위",
-                                                        '브랜드': brand_display,
-                                                        '평균 평점': f"{info.get('평균_평점', 0):.2f}점"
-                                                    })
-                                            if rating_data:
-                                                st.dataframe(pd.DataFrame(rating_data), use_container_width=True)
-                                            else:
-                                                st.info("평점 데이터가 없습니다.")
-                                        else:
-                                            st.info("평점 데이터가 없습니다.")
-                                    
-                                    with rank_tabs[3]:  # 종합 영향력
-                                        if review_col and rating_col:
-                                            impact_ranking = sorted(brand_analysis.items(),
-                                                                  key=lambda x: x[1].get('종합_영향력', 0), reverse=True)[:5]
-                                            impact_data = []
-                                            for rank, (brand, info) in enumerate(impact_ranking, 1):
-                                                if info.get('종합_영향력', 0) > 0:
-                                                    brand_display = f"🎯 {brand}" if brand == "서로" else brand
-                                                    impact_data.append({
-                                                        '순위': f"{rank}위",
-                                                        '브랜드': brand_display,
-                                                        '영향력 점수': f"{info.get('종합_영향력', 0):,.1f}"
-                                                    })
-                                            if impact_data:
-                                                st.dataframe(pd.DataFrame(impact_data), use_container_width=True)
-                                            else:
-                                                st.info("종합 영향력 데이터가 없습니다.")
-                                        else:
-                                            st.info("종합 영향력 계산에 필요한 데이터가 없습니다.")
-                                else:
-                                    st.warning(f"{platform}에서 서로 브랜드를 찾을 수 없습니다.")
-                                
-                                # 시장 규모 정보
-                                total_brands = data.get('총_브랜드수', 0)
-                                total_products = data.get('총_제품수', 0)
-                                st.info(f"💡 {platform} 시장 규모: {total_brands}개 브랜드, {total_products}개 제품")
-                        
-                        # 전체적인 플랫폼별 전략 인사이트
-                        st.markdown("##### 🎯 플랫폼별 전략 우선순위")
-                        
-                        # 플랫폼별 종합 점수 계산
-                        platform_scores = {}
-                        for platform, data in platform_data.items():
-                            seoro_info = data.get('서로_분석', {})
-                            if seoro_info:
-                                ranks = []
-                                for rank_key in ['제품수_순위', '리뷰수_순위', '평점_순위', '영향력_순위']:
-                                    rank = seoro_info.get(rank_key)
-                                    if isinstance(rank, int):
-                                        ranks.append(rank)
-                                
-                                if ranks:
-                                    avg_rank = sum(ranks) / len(ranks)
-                                    platform_scores[platform] = avg_rank
-                        
-                        if platform_scores:
-                            sorted_platforms = sorted(platform_scores.items(), key=lambda x: x[1])
-                            
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                best_platform, best_score = sorted_platforms[0]
-                                st.success(f"🏆 **최강 플랫폼**: {best_platform} (평균 {best_score:.1f}위)")
-                                st.write("→ 현재 포지션 유지 및 공격적 확장")
-                            
-                            with col2:
-                                if len(sorted_platforms) > 1:
-                                    worst_platform, worst_score = sorted_platforms[-1]
-                                    st.warning(f"📈 **기회 플랫폼**: {worst_platform} (평균 {worst_score:.1f}위)")
-                                    st.write("→ 집중 투자로 시장 점유율 확대")
-                    
-                    else:
-                        st.warning("플랫폼별 분석 데이터가 없습니다."),
-                                '시장규모': f"{total_products}개 제품"
-                            })
-                        
-                        summary_df = pd.DataFrame(summary_data)
-                        st.dataframe(summary_df, use_container_width=True)
-                        
-                        # 플랫폼별 상세 분석
-                        st.markdown("##### 📊 플랫폼별 상세 현황")
-                        
-                        for platform, data in platform_data.items():
-                            with st.expander(f"🏪 {platform} 시장 분석"):
-                                
-                                # 전략 제안
-                                strategy = data.get('전략_제안', '')
-                                if strategy:
-                                    if "🏆" in strategy:
-                                        st.success(strategy)
-                                    elif "🥉" in strategy:
-                                        st.info(strategy)
-                                    elif "📈" in strategy:
-                                        st.warning(strategy)
-                                    else:
-                                        st.error(strategy)
-                                
-                                # 상위 5개 브랜드 순위표
-                                brand_rankings = data.get('브랜드_순위', {})
-                                if brand_rankings:
-                                    st.markdown("**상위 브랜드 순위:**")
-                                    
-                                    ranking_data = []
-                                    for brand, brand_data in brand_rankings.items():
-                                        rank = brand_data.get('순위', 0)
-                                        count = brand_data.get('제품수', 0)
-                                        share = brand_data.get('점유율', 0)
-                                        
-                                        # 서로 브랜드 강조
-                                        if brand == "서로":
-                                            brand_display = f"🎯 {brand}"
-                                        else:
-                                            brand_display = brand
-                                        
-                                        ranking_data.append({
-                                            '순위': f"{rank}위",
-                                            '브랜드': brand_display,
-                                            '제품수': f"{count}개",
-                                            '점유율': f"{share}%"
-                                        })
-                                    
-                                    ranking_df = pd.DataFrame(ranking_data)
-                                    st.dataframe(ranking_df, use_container_width=True)
-                                
-                                # 시장 규모 정보
-                                total_products = data.get('총_제품수', 0)
-                                st.info(f"💡 {platform} 수정과 시장: 총 {total_products}개 제품")
-                        
-                        # 전체적인 인사이트
-                        st.markdown("##### 🎯 플랫폼 전략 요약")
-                        
-                        # 가장 강한 플랫폼과 약한 플랫폼 찾기
-                        best_platform = None
-                        worst_platform = None
-                        best_rank = float('inf')
-                        worst_rank = 0
-                        
-                        for platform, data in platform_data.items():
-                            seoro_rank = data.get('서로_순위', None)
-                            if seoro_rank:
-                                if seoro_rank < best_rank:
-                                    best_rank = seoro_rank
-                                    best_platform = platform
-                                if seoro_rank > worst_rank:
-                                    worst_rank = seoro_rank
-                                    worst_platform = platform
-                        
-                        if best_platform and worst_platform and best_platform != worst_platform:
-                            st.success(f"🎯 **강점 플랫폼**: {best_platform} ({best_rank}위) - 현재 포지션 유지 및 확장")
-                            st.warning(f"📈 **기회 플랫폼**: {worst_platform} ({worst_rank}위) - 집중 마케팅 및 점유율 확대")
-                        elif best_platform:
-                            st.info(f"🎯 **주력 플랫폼**: {best_platform} ({best_rank}위)")
-                    
-                    else:
-                        st.warning("플랫폼별 분석 데이터가 없습니다.")
-        else:
-            st.warning("브랜드별 분석 데이터가 없습니다.")
-    
-    # 기존 분석도 폴백으로 유지
-    elif 'market_share' in business_insights:
+    if 'market_share' in business_insights:
         share_data = business_insights['market_share']
         
         if share_data:
-            st.markdown("#### 📊 기본 제품 수 기준 점유율")
             share_df = pd.DataFrame([
                 {'브랜드': brand, '제품 수': data.get('제품_수', 0), '점유율': f"{data.get('점유율_퍼센트', 0)}%"}
                 for brand, data in share_data.items()
             ])
             
             st.dataframe(share_df, use_container_width=True)
+            
+            # 서로 브랜드 순위 찾기
+            seoro_rank = None
+            for idx, (brand, _) in enumerate(share_data.items(), 1):
+                if brand == "서로":
+                    seoro_rank = idx
+                    break
+            
+            if seoro_rank:
+                if seoro_rank == 1:
+                    st.success(f"🏆 서로 브랜드가 **1위**입니다!")
+                elif seoro_rank <= 3:
+                    st.info(f"🥉 서로 브랜드가 **{seoro_rank}위**입니다.")
+                else:
+                    st.warning(f"📈 서로 브랜드가 **{seoro_rank}위**입니다. 더 많은 제품 라인업이 필요해 보입니다.")
+            else:
+                st.info("서로 브랜드는 현재 상위 10위 안에 없습니다.")
         else:
             st.warning("브랜드별 점유율 데이터가 없습니다.")
     else:
