@@ -30,7 +30,7 @@ class SujeonggwaMarketAnalyzer:
             "일반 판매가", "일반 판매가 단위가격(100ml당)", 
             "상시 할인가", "상시 할인가 단위가격(100ml당)",
             "배송비", "최저가(배송비 포함)", "최저가 단위가격(100ml당)", 
-            "공장형 여부"
+            "공장형 여부", "리뷰 개수", "평점"  # 리뷰/평점 컬럼 추가
         ]
         self.our_brand = "서로"
     
@@ -415,24 +415,32 @@ class SujeonggwaMarketAnalyzer:
             # 리뷰/평점 데이터 준비 및 정제
             df_with_reviews = df.copy()
             
-            # 리뷰 개수와 평점 컬럼 확인 및 정제
+            # 리뷰 개수와 평점 컬럼 확인 및 정제 (디버깅 로그 추가)
             review_col = None
             rating_col = None
             
+            # 실제 컬럼명 확인 (디버깅용)
+            available_columns = list(df_with_reviews.columns)
+            
             for col in ['리뷰 개수', '리뷰개수', 'review_count', '리뷰수']:
-                if col in df_with_reviews.columns:
+                if col in available_columns:
                     review_col = col
                     break
             
             for col in ['평점', '평균평점', 'rating', '별점']:
-                if col in df_with_reviews.columns:
+                if col in available_columns:
                     rating_col = col
                     break
             
+            # 디버깅 정보 (실제 운영에서는 제거 가능)
+            if not review_col or not rating_col:
+                st.info(f"🔍 디버깅 정보: 사용 가능한 컬럼들: {available_columns}")
+                st.info(f"🔍 찾은 리뷰 컬럼: {review_col}, 찾은 평점 컬럼: {rating_col}")
+            
             # 데이터 정제
-            if review_col:
+            if review_col and review_col in df_with_reviews.columns:
                 df_with_reviews[review_col] = pd.to_numeric(df_with_reviews[review_col], errors='coerce').fillna(0)
-            if rating_col:
+            if rating_col and rating_col in df_with_reviews.columns:
                 df_with_reviews[rating_col] = pd.to_numeric(df_with_reviews[rating_col], errors='coerce').fillna(0)
             
             # 브랜드별 종합 분석
