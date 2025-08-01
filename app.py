@@ -216,7 +216,7 @@ class SujeonggwaMarketAnalyzer:
             
             category_results['business_insights']['our_product_details'] = our_product_details
         
-        # 2. 플랫폼별 가격 경쟁력 분석
+        # 2. 플랫폼별 가격 경쟁력 분석 (개선된 버전)
         if ('최저가 단위가격(100ml당)' in df.columns and 
             '플랫폼' in df.columns and 
             '용량(ml)' in df.columns and 
@@ -243,14 +243,48 @@ class SujeonggwaMarketAnalyzer:
                             if pd.isna(our_volume) or pd.isna(our_count) or pd.isna(our_unit_price):
                                 continue
                             
-                            # 같은 용량, 같은 개수의 경쟁사 제품 찾기
-                            similar_competitors = competitor_platform_data[
+                            # 1단계: 정확히 같은 용량+개수 경쟁사 찾기
+                            exact_competitors = competitor_platform_data[
                                 (competitor_platform_data['용량(ml)'] == our_volume) & 
                                 (competitor_platform_data['개수'] == our_count)
                             ]
                             
-                            if not similar_competitors.empty:
-                                competitor_unit_prices = similar_competitors['최저가 단위가격(100ml당)'].dropna()
+                            # 2단계: 정확한 매치가 없으면 유사 용량대 찾기 (±20% 범위)
+                            volume_range_min = our_volume * 0.8
+                            volume_range_max = our_volume * 1.2
+                            similar_volume_competitors = competitor_platform_data[
+                                (competitor_platform_data['용량(ml)'] >= volume_range_min) & 
+                                (competitor_platform_data['용량(ml)'] <= volume_range_max) &
+                                (competitor_platform_data['개수'] == our_count)
+                            ]
+                            
+                            # 3단계: 용량은 다르지만 같은 개수의 경쟁사 찾기
+                            same_count_competitors = competitor_platform_data[
+                                competitor_platform_data['개수'] == our_count
+                            ]
+                            
+                            # 4단계: 전체 경쟁사와 비교 (단위가격 기준)
+                            all_competitors = competitor_platform_data.copy()
+                            
+                            # 가장 적절한 비교군 선택
+                            selected_competitors = None
+                            comparison_type = ""
+                            
+                            if not exact_competitors.empty:
+                                selected_competitors = exact_competitors
+                                comparison_type = "동일 용량+개수"
+                            elif not similar_volume_competitors.empty:
+                                selected_competitors = similar_volume_competitors
+                                comparison_type = f"유사 용량({volume_range_min:.0f}~{volume_range_max:.0f}ml)+동일개수"
+                            elif not same_count_competitors.empty:
+                                selected_competitors = same_count_competitors
+                                comparison_type = "동일 개수"
+                            elif not all_competitors.empty:
+                                selected_competitors = all_competitors
+                                comparison_type = "전체 시장"
+                            
+                            if selected_competitors is not None and not selected_competitors.empty:
+                                competitor_unit_prices = selected_competitors['최저가 단위가격(100ml당)'].dropna()
                                 
                                 if len(competitor_unit_prices) > 0:
                                     competitor_avg = competitor_unit_prices.mean()
@@ -263,12 +297,25 @@ class SujeonggwaMarketAnalyzer:
                                     # 시장 위치 판단
                                     if our_unit_price <= competitor_min:
                                         market_position = "최저가"
+                                        position_color = "🎯"
                                     elif our_unit_price <= competitor_avg:
                                         market_position = "평균 이하"
+                                        position_color = "📊"
                                     elif our_unit_price <= competitor_max:
                                         market_position = "평균 이상"
+                                        position_color = "📈"
                                     else:
                                         market_position = "최고가"
+                                        position_color = "💰"
+                                    
+                                    # 경쟁사 세부 정보 추가
+                                    competitor_details = []
+                                    for _, comp in selected_competitors.head(3).iterrows():
+                                        comp_volume = comp.get('용량(ml)', 'N/A')
+                                        comp_count = comp.get('개수', 'N/A')
+                                        comp_price = comp.get('최저가 단위가격(100ml당)', 'N/A')
+                                        comp_brand = comp.get('브랜드', 'N/A')
+                                        competitor_details.append(f"{comp_brand} {comp_volume}ml×{comp_count}개 ({comp_price:,.0f}원/100ml)")
                                     
                                     product_comp = {
                                         '제품': f"{our_product.get('제품명', '')} {our_volume}ml {our_count}개",
@@ -278,8 +325,10 @@ class SujeonggwaMarketAnalyzer:
                                         '경쟁사_최고': f"{competitor_max:,.0f}원",
                                         '가격차이': f"{price_gap:+,.0f}원",
                                         '가격차이_퍼센트': f"{price_gap_percent:+.1f}%",
-                                        '시장_포지션': market_position,
-                                        '경쟁사_수': len(similar_competitors)
+                                        '시장_포지션': f"{position_color} {market_position}",
+                                        '경쟁사_수': len(selected_competitors),
+                                        '비교_기준': comparison_type,
+                                        '주요_경쟁사': competitor_details[:3]
                                     }
                                     our_product_competitiveness.append(product_comp)
                         except Exception as e:
@@ -577,6 +626,17 @@ def show_category_analysis(category_data, category_type):
                         for product in products:
                             st.markdown(f"**{product.get('제품', 'N/A')}**")
                             
+                            # 비교 기준 표시
+                            comparison_basis = product.get('비교_기준', 'N/A')
+                            if comparison_basis == "동일 용량+개수":
+                                st.success(f"🎯 **비교 기준**: {comparison_basis}")
+                            elif "유사 용량" in comparison_basis:
+                                st.info(f"📊 **비교 기준**: {comparison_basis}")
+                            elif comparison_basis == "동일 개수":
+                                st.warning(f"📈 **비교 기준**: {comparison_basis}")
+                            else:
+                                st.error(f"💰 **비교 기준**: {comparison_basis}")
+                            
                             col1, col2, col3 = st.columns(3)
                             
                             with col1:
@@ -590,18 +650,25 @@ def show_category_analysis(category_data, category_type):
                             with col3:
                                 st.metric("가격 차이", product.get('가격차이', 'N/A'), product.get('가격차이_퍼센트', 'N/A'))
                                 
-                                # 시장 포지션 색상 표시
+                                # 시장 포지션 색상 표시 (이미 이모지 포함됨)
                                 position = product.get('시장_포지션', 'N/A')
                                 competitor_count = product.get('경쟁사_수', 0)
                                 
-                                if position == "최저가":
-                                    st.success(f"🎯 **{position}** (경쟁사 {competitor_count}개)")
-                                elif position == "평균 이하":
-                                    st.info(f"📊 **{position}** (경쟁사 {competitor_count}개)")
-                                elif position == "평균 이상":
-                                    st.warning(f"📈 **{position}** (경쟁사 {competitor_count}개)")
+                                if "🎯" in position:
+                                    st.success(f"**{position}** (경쟁사 {competitor_count}개)")
+                                elif "📊" in position:
+                                    st.info(f"**{position}** (경쟁사 {competitor_count}개)")
+                                elif "📈" in position:
+                                    st.warning(f"**{position}** (경쟁사 {competitor_count}개)")
                                 else:
-                                    st.error(f"💰 **{position}** (경쟁사 {competitor_count}개)")
+                                    st.error(f"**{position}** (경쟁사 {competitor_count}개)")
+                            
+                            # 주요 경쟁사 표시
+                            main_competitors = product.get('주요_경쟁사', [])
+                            if main_competitors:
+                                st.markdown("**📋 주요 경쟁사:**")
+                                for i, competitor in enumerate(main_competitors, 1):
+                                    st.write(f"  {i}. {competitor}")
                             
                             st.markdown("---")
             else:
