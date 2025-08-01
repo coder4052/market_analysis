@@ -11,9 +11,16 @@ import base64
 import requests
 from io import BytesIO
 
-# GitHub 설정
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
-GITHUB_REPO = st.secrets.get("GITHUB_REPO", "coder4052/market_analysis")
+# Streamlit 설정
+st.set_page_config(
+    page_title="서로 수정과 - 시장 가격 분석",
+    page_icon="🥤",
+    layout="wide"
+)
+
+# GitHub 설정 (안전한 기본값 제공)
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "") if hasattr(st, 'secrets') else ""
+GITHUB_REPO = st.secrets.get("GITHUB_REPO", "coder4052/market_analysis") if hasattr(st, 'secrets') else "coder4052/market_analysis"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/contents"
 
 class SujeonggwaMarketAnalyzer:
@@ -52,16 +59,23 @@ class SujeonggwaMarketAnalyzer:
             if missing_columns:
                 st.warning(f"[{platform}] 누락된 컬럼: {missing_columns}")
             
+            if not available_columns:
+                st.error(f"[{platform}] 필수 컬럼이 없습니다.")
+                return None, None, None
+            
             # 데이터 정제
             df_clean = df[available_columns].copy()
             df_clean['플랫폼'] = platform
             df_clean['분석_시간'] = datetime.now().strftime('%Y-%m-%d %H:%M')
             
-            # 숫자형 컬럼 변환
+            # 숫자형 컬럼 변환 (안전하게 처리)
             numeric_columns = ['용량(ml)', '개수', '최저가(배송비 포함)', '최저가 단위가격(100ml당)', '공장형 여부']
             for col in numeric_columns:
                 if col in df_clean.columns:
                     df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+            
+            # NaN 값 제거
+            df_clean = df_clean.dropna(subset=['브랜드', '제품명'])
             
             return df_clean, platform, missing_columns
             
@@ -72,7 +86,7 @@ class SujeonggwaMarketAnalyzer:
     def analyze_business_critical_data(self, df_list):
         """소상공인 관점의 핵심 비즈니스 분석"""
         if not df_list:
-            return None
+            return None, None, None
         
         combined_df = pd.concat(df_list, ignore_index=True)
         
@@ -98,7 +112,7 @@ class SujeonggwaMarketAnalyzer:
             'our_brand': self.our_brand,
             'handmade_category': handmade_analysis,
             'all_category': all_analysis,
-            'platforms_analyzed': combined_df['플랫폼'].unique().tolist()
+            'platforms_analyzed': combined_df['플랫폼'].unique().tolist() if '플랫폼' in combined_df.columns else []
         }
         
         return analysis_results, handmade_df, all_products_df
@@ -106,16 +120,55 @@ class SujeonggwaMarketAnalyzer:
     def _analyze_category(self, df, category_name):
         """카테고리별 분석 (수제 또는 전체)"""
         
+        if df.empty:
+            return {
+                'category_name': category_name,
+                'total_products_analyzed': 0,
+                'total_unique_products': 0,
+                'our_products_count': 0,
+                'our_unique_products_count': 0,
+                'competitor_products_count': 0,
+                'competitor_unique_products_count': 0,
+                'business_insights': {}
+            }
+        
         # 서로 브랜드 데이터 추출
         our_products = df[df['브랜드'] == self.our_brand].copy()
         competitor_products = df[df['브랜드'] != self.our_brand].copy()
         
-        # 제품 그룹핑 (브랜드 + 제품명 + 용량 + 개수로 각각 분석)
-        unique_products = df.groupby(['브랜드', '제품명', '용량(ml)', '개수']).agg({
-            '최저가(배송비 포함)': 'min',  # 최저가 선택
-            '최저가 단위가격(100ml당)': 'min',  # 최저 단위가격 선택
-            '플랫폼': lambda x: list(x.unique())  # 판매 플랫폼 리스트
-        }).reset_index()
+        # 필수 컬럼 체크
+        required_for_analysis = ['브랜드', '제품명', '용량(ml)', '개수']
+        available_cols = [col for col in required_for_analysis if col in df.columns]
+        
+        if len(available_cols) < 2:
+            st.warning(f"분석에 필요한 기본 컬럼이 부족합니다: {required_for_analysis}")
+            return {
+                'category_name': category_name,
+                'total_products_analyzed': len(df),
+                'total_unique_products': 0,
+                'our_products_count': len(our_products),
+                'our_unique_products_count': 0,
+                'competitor_products_count': len(competitor_products),
+                'competitor_unique_products_count': 0,
+                'business_insights': {}
+            }
+        
+        # 제품 그룹핑 (사용 가능한 컬럼만으로)
+        group_cols = available_cols
+        agg_dict = {}
+        
+        if '최저가(배송비 포함)' in df.columns:
+            agg_dict['최저가(배송비 포함)'] = 'min'
+        if '최저가 단위가격(100ml당)' in df.columns:
+            agg_dict['최저가 단위가격(100ml당)'] = 'min'
+        if '플랫폼' in df.columns:
+            agg_dict['플랫폼'] = lambda x: list(x.unique())
+        
+        if not agg_dict:
+            # 최소한의 그룹핑만 수행
+            unique_products = df.groupby(group_cols).size().reset_index(name='count')
+        else:
+            unique_products = df.groupby(group_cols).agg(agg_dict).reset_index()
         
         # 우리 브랜드 고유 제품 수 계산
         our_unique_products = unique_products[unique_products['브랜드'] == self.our_brand]
@@ -137,72 +190,100 @@ class SujeonggwaMarketAnalyzer:
             our_product_details = []
             for _, product in our_unique_products.iterrows():
                 product_info = {
-                    '브랜드': product['브랜드'],
-                    '제품명': product['제품명'],
-                    '용량': f"{product['용량(ml)']}ml",
-                    '개수': f"{product['개수']}개",
-                    '최저가': f"{product['최저가(배송비 포함)']:,}원",
-                    '단위가격': f"{product['최저가 단위가격(100ml당)']:,}원/100ml",
-                    '판매플랫폼': ', '.join(product['플랫폼'])
+                    '브랜드': product.get('브랜드', ''),
+                    '제품명': product.get('제품명', ''),
+                    '용량': f"{product.get('용량(ml)', 0)}ml" if pd.notna(product.get('용량(ml)')) else 'N/A',
+                    '개수': f"{product.get('개수', 0)}개" if pd.notna(product.get('개수')) else 'N/A'
                 }
+                
+                # 안전하게 가격 정보 추가
+                if '최저가(배송비 포함)' in product.index and pd.notna(product['최저가(배송비 포함)']):
+                    product_info['최저가'] = f"{product['최저가(배송비 포함)']:,.0f}원"
+                else:
+                    product_info['최저가'] = 'N/A'
+                
+                if '최저가 단위가격(100ml당)' in product.index and pd.notna(product['최저가 단위가격(100ml당)']):
+                    product_info['단위가격'] = f"{product['최저가 단위가격(100ml당)']:,.0f}원/100ml"
+                else:
+                    product_info['단위가격'] = 'N/A'
+                
+                if '플랫폼' in product.index and isinstance(product['플랫폼'], list):
+                    product_info['판매플랫폼'] = ', '.join(product['플랫폼'])
+                else:
+                    product_info['판매플랫폼'] = 'N/A'
+                
                 our_product_details.append(product_info)
             
             category_results['business_insights']['our_product_details'] = our_product_details
         
-        # 2. 플랫폼별 가격 경쟁력 분석 (제품별로 세분화)
-        if '최저가 단위가격(100ml당)' in df.columns:
+        # 2. 플랫폼별 가격 경쟁력 분석
+        if ('최저가 단위가격(100ml당)' in df.columns and 
+            '플랫폼' in df.columns and 
+            '용량(ml)' in df.columns and 
+            '개수' in df.columns):
+            
             competitiveness = {}
             for platform in df['플랫폼'].unique():
+                if pd.isna(platform):
+                    continue
+                    
                 platform_data = df[df['플랫폼'] == platform]
                 our_platform_data = our_products[our_products['플랫폼'] == platform]
                 competitor_platform_data = competitor_products[competitor_products['플랫폼'] == platform]
                 
                 if not our_platform_data.empty and not competitor_platform_data.empty:
-                    # 우리 제품별 경쟁력 분석
                     our_product_competitiveness = []
                     
                     for _, our_product in our_platform_data.iterrows():
-                        our_volume = our_product['용량(ml)']
-                        our_count = our_product['개수']
-                        our_unit_price = our_product['최저가 단위가격(100ml당)']
-                        
-                        # 같은 용량, 같은 개수의 경쟁사 제품 찾기
-                        similar_competitors = competitor_platform_data[
-                            (competitor_platform_data['용량(ml)'] == our_volume) & 
-                            (competitor_platform_data['개수'] == our_count)
-                        ]
-                        
-                        if not similar_competitors.empty:
-                            competitor_unit_prices = similar_competitors['최저가 단위가격(100ml당)']
-                            competitor_avg = competitor_unit_prices.mean()
-                            competitor_min = competitor_unit_prices.min()
-                            competitor_max = competitor_unit_prices.max()
+                        try:
+                            our_volume = our_product.get('용량(ml)')
+                            our_count = our_product.get('개수')
+                            our_unit_price = our_product.get('최저가 단위가격(100ml당)')
                             
-                            price_gap = our_unit_price - competitor_avg
-                            price_gap_percent = (price_gap / competitor_avg) * 100
+                            if pd.isna(our_volume) or pd.isna(our_count) or pd.isna(our_unit_price):
+                                continue
                             
-                            # 시장 위치 판단
-                            if our_unit_price <= competitor_min:
-                                market_position = "최저가"
-                            elif our_unit_price <= competitor_avg:
-                                market_position = "평균 이하"
-                            elif our_unit_price <= competitor_max:
-                                market_position = "평균 이상"
-                            else:
-                                market_position = "최고가"
+                            # 같은 용량, 같은 개수의 경쟁사 제품 찾기
+                            similar_competitors = competitor_platform_data[
+                                (competitor_platform_data['용량(ml)'] == our_volume) & 
+                                (competitor_platform_data['개수'] == our_count)
+                            ]
                             
-                            product_comp = {
-                                '제품': f"{our_product['제품명']} {our_volume}ml {our_count}개",
-                                '우리_단위가격': f"{our_unit_price:,}원",
-                                '경쟁사_평균': f"{competitor_avg:,}원",
-                                '경쟁사_최저': f"{competitor_min:,}원",
-                                '경쟁사_최고': f"{competitor_max:,}원",
-                                '가격차이': f"{price_gap:+,.0f}원",
-                                '가격차이_퍼센트': f"{price_gap_percent:+.1f}%",
-                                '시장_포지션': market_position,
-                                '경쟁사_수': len(similar_competitors)
-                            }
-                            our_product_competitiveness.append(product_comp)
+                            if not similar_competitors.empty:
+                                competitor_unit_prices = similar_competitors['최저가 단위가격(100ml당)'].dropna()
+                                
+                                if len(competitor_unit_prices) > 0:
+                                    competitor_avg = competitor_unit_prices.mean()
+                                    competitor_min = competitor_unit_prices.min()
+                                    competitor_max = competitor_unit_prices.max()
+                                    
+                                    price_gap = our_unit_price - competitor_avg
+                                    price_gap_percent = (price_gap / competitor_avg) * 100 if competitor_avg > 0 else 0
+                                    
+                                    # 시장 위치 판단
+                                    if our_unit_price <= competitor_min:
+                                        market_position = "최저가"
+                                    elif our_unit_price <= competitor_avg:
+                                        market_position = "평균 이하"
+                                    elif our_unit_price <= competitor_max:
+                                        market_position = "평균 이상"
+                                    else:
+                                        market_position = "최고가"
+                                    
+                                    product_comp = {
+                                        '제품': f"{our_product.get('제품명', '')} {our_volume}ml {our_count}개",
+                                        '우리_단위가격': f"{our_unit_price:,.0f}원",
+                                        '경쟁사_평균': f"{competitor_avg:,.0f}원",
+                                        '경쟁사_최저': f"{competitor_min:,.0f}원",
+                                        '경쟁사_최고': f"{competitor_max:,.0f}원",
+                                        '가격차이': f"{price_gap:+,.0f}원",
+                                        '가격차이_퍼센트': f"{price_gap_percent:+.1f}%",
+                                        '시장_포지션': market_position,
+                                        '경쟁사_수': len(similar_competitors)
+                                    }
+                                    our_product_competitiveness.append(product_comp)
+                        except Exception as e:
+                            continue  # 개별 제품 오류는 건너뛰기
                     
                     if our_product_competitiveness:
                         competitiveness[platform] = our_product_competitiveness
@@ -210,59 +291,89 @@ class SujeonggwaMarketAnalyzer:
             category_results['business_insights']['detailed_competitiveness'] = competitiveness
         
         # 3. 용량별/개수별 시장 현황
-        if not df.empty:
-            # 용량-개수 조합별 제품 수
-            volume_count_combinations = df.groupby(['용량(ml)', '개수']).size().reset_index(name='제품수')
-            volume_count_combinations = volume_count_combinations.sort_values('제품수', ascending=False)
-            
-            volume_count_market = []
-            for _, combo in volume_count_combinations.head(10).iterrows():
-                volume = combo['용량(ml)']
-                count = combo['개수']
-                total_products = combo['제품수']
+        if '용량(ml)' in df.columns and '개수' in df.columns:
+            try:
+                # NaN 값 제거
+                df_for_volume = df.dropna(subset=['용량(ml)', '개수'])
                 
-                # 해당 조합에서 우리 제품 수
-                our_products_in_combo = len(our_products[
-                    (our_products['용량(ml)'] == volume) & 
-                    (our_products['개수'] == count)
-                ])
-                
-                # 해당 조합에서 가격 분포
-                combo_products = df[
-                    (df['용량(ml)'] == volume) & 
-                    (df['개수'] == count)
-                ]
-                
-                if not combo_products.empty and '최저가 단위가격(100ml당)' in combo_products.columns:
-                    avg_unit_price = combo_products['최저가 단위가격(100ml당)'].mean()
-                    min_unit_price = combo_products['최저가 단위가격(100ml당)'].min()
-                    max_unit_price = combo_products['최저가 단위가격(100ml당)'].max()
+                if not df_for_volume.empty:
+                    volume_count_combinations = df_for_volume.groupby(['용량(ml)', '개수']).size().reset_index(name='제품수')
+                    volume_count_combinations = volume_count_combinations.sort_values('제품수', ascending=False)
                     
-                    combo_info = {
-                        '용량_개수': f"{volume}ml {count}개",
-                        '총_제품수': total_products,
-                        '우리_제품수': our_products_in_combo,
-                        '평균_단위가격': f"{avg_unit_price:,.0f}원",
-                        '최저_단위가격': f"{min_unit_price:,.0f}원",
-                        '최고_단위가격': f"{max_unit_price:,.0f}원"
-                    }
-                    volume_count_market.append(combo_info)
+                    volume_count_market = []
+                    for _, combo in volume_count_combinations.head(10).iterrows():
+                        volume = combo['용량(ml)']
+                        count = combo['개수']
+                        total_products = combo['제품수']
+                        
+                        # 해당 조합에서 우리 제품 수
+                        our_products_in_combo = len(our_products[
+                            (our_products['용량(ml)'] == volume) & 
+                            (our_products['개수'] == count)
+                        ])
+                        
+                        # 해당 조합에서 가격 분포
+                        combo_products = df_for_volume[
+                            (df_for_volume['용량(ml)'] == volume) & 
+                            (df_for_volume['개수'] == count)
+                        ]
+                        
+                        combo_info = {
+                            '용량_개수': f"{volume}ml {count}개",
+                            '총_제품수': int(total_products),
+                            '우리_제품수': int(our_products_in_combo)
+                        }
+                        
+                        if ('최저가 단위가격(100ml당)' in combo_products.columns and 
+                            not combo_products['최저가 단위가격(100ml당)'].isna().all()):
+                            
+                            unit_prices = combo_products['최저가 단위가격(100ml당)'].dropna()
+                            if len(unit_prices) > 0:
+                                avg_unit_price = unit_prices.mean()
+                                min_unit_price = unit_prices.min()
+                                max_unit_price = unit_prices.max()
+                                
+                                combo_info.update({
+                                    '평균_단위가격': f"{avg_unit_price:,.0f}원",
+                                    '최저_단위가격': f"{min_unit_price:,.0f}원",
+                                    '최고_단위가격': f"{max_unit_price:,.0f}원"
+                                })
+                            else:
+                                combo_info.update({
+                                    '평균_단위가격': 'N/A',
+                                    '최저_단위가격': 'N/A',
+                                    '최고_단위가격': 'N/A'
+                                })
+                        else:
+                            combo_info.update({
+                                '평균_단위가격': 'N/A',
+                                '최저_단위가격': 'N/A',
+                                '최고_단위가격': 'N/A'
+                            })
+                        
+                        volume_count_market.append(combo_info)
+                    
+                    category_results['business_insights']['volume_count_market'] = volume_count_market
+            except Exception as e:
+                st.warning(f"용량별 시장 분석 중 오류: {str(e)}")
+        
+        # 4. 브랜드별 시장 점유율
+        try:
+            brand_share = unique_products['브랜드'].value_counts()
+            total_unique_products = len(unique_products)
+            brand_share_percent = {}
             
-            category_results['business_insights']['volume_count_market'] = volume_count_market
-        
-        # 4. 브랜드별 시장 점유율 (정확한 제품 수 기준)
-        brand_share = unique_products['브랜드'].value_counts()
-        total_unique_products = len(unique_products)
-        brand_share_percent = {}
-        
-        for brand, count in brand_share.head(10).items():
-            percentage = (count / total_unique_products) * 100
-            brand_share_percent[brand] = {
-                '제품_수': int(count),
-                '점유율_퍼센트': round(percentage, 1)
-            }
-        
-        category_results['business_insights']['market_share'] = brand_share_percent
+            for brand, count in brand_share.head(10).items():
+                if pd.notna(brand) and total_unique_products > 0:
+                    percentage = (count / total_unique_products) * 100
+                    brand_share_percent[brand] = {
+                        '제품_수': int(count),
+                        '점유율_퍼센트': round(percentage, 1)
+                    }
+            
+            category_results['business_insights']['market_share'] = brand_share_percent
+        except Exception as e:
+            st.warning(f"브랜드별 점유율 분석 중 오류: {str(e)}")
         
         return category_results
 
@@ -385,6 +496,11 @@ class SujeonggwaMarketAnalyzer:
 def show_analysis_results(analysis_results, json_content, timestamp, github_success):
     """분석 결과를 표시하는 함수"""
     
+    # 안전성 체크
+    if not analysis_results:
+        st.error("분석 결과가 없습니다.")
+        return
+    
     # 결과 대시보드
     if github_success:
         st.success("✅ 분석 완료 및 GitHub 저장 성공!")
@@ -432,8 +548,9 @@ def show_category_analysis(category_data, category_type):
     with tab1:
         st.subheader(f"🥤 서로 브랜드 제품 현황 ({category_type})")
         
-        if 'our_product_details' in category_data.get('business_insights', {}):
-            product_details = category_data['business_insights']['our_product_details']
+        business_insights = category_data.get('business_insights', {})
+        if 'our_product_details' in business_insights:
+            product_details = business_insights['our_product_details']
             
             if product_details:
                 # 제품 현황 테이블
@@ -449,48 +566,55 @@ def show_category_analysis(category_data, category_type):
     with tab2:
         st.subheader(f"💰 제품별 가격 경쟁력 ({category_type})")
         
-        if 'detailed_competitiveness' in category_data.get('business_insights', {}):
-            comp_data = category_data['business_insights']['detailed_competitiveness']
+        business_insights = category_data.get('business_insights', {})
+        if 'detailed_competitiveness' in business_insights:
+            comp_data = business_insights['detailed_competitiveness']
             
-            for platform, products in comp_data.items():
-                with st.expander(f"🏪 {platform} - {len(products)}개 제품"):
-                    
-                    for product in products:
-                        st.markdown(f"**{product['제품']}**")
+            if comp_data:
+                for platform, products in comp_data.items():
+                    with st.expander(f"🏪 {platform} - {len(products)}개 제품"):
                         
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric("우리 단위가격", product['우리_단위가격'])
-                            st.metric("경쟁사 평균", product['경쟁사_평균'])
-                        
-                        with col2:
-                            st.metric("경쟁사 최저", product['경쟁사_최저'])
-                            st.metric("경쟁사 최고", product['경쟁사_최고'])
-                        
-                        with col3:
-                            st.metric("가격 차이", product['가격차이'], product['가격차이_퍼센트'])
+                        for product in products:
+                            st.markdown(f"**{product.get('제품', 'N/A')}**")
                             
-                            # 시장 포지션 색상 표시
-                            position = product['시장_포지션']
-                            if position == "최저가":
-                                st.success(f"🎯 **{position}** (경쟁사 {product['경쟁사_수']}개)")
-                            elif position == "평균 이하":
-                                st.info(f"📊 **{position}** (경쟁사 {product['경쟁사_수']}개)")
-                            elif position == "평균 이상":
-                                st.warning(f"📈 **{position}** (경쟁사 {product['경쟁사_수']}개)")
-                            else:
-                                st.error(f"💰 **{position}** (경쟁사 {product['경쟁사_수']}개)")
-                        
-                        st.markdown("---")
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric("우리 단위가격", product.get('우리_단위가격', 'N/A'))
+                                st.metric("경쟁사 평균", product.get('경쟁사_평균', 'N/A'))
+                            
+                            with col2:
+                                st.metric("경쟁사 최저", product.get('경쟁사_최저', 'N/A'))
+                                st.metric("경쟁사 최고", product.get('경쟁사_최고', 'N/A'))
+                            
+                            with col3:
+                                st.metric("가격 차이", product.get('가격차이', 'N/A'), product.get('가격차이_퍼센트', 'N/A'))
+                                
+                                # 시장 포지션 색상 표시
+                                position = product.get('시장_포지션', 'N/A')
+                                competitor_count = product.get('경쟁사_수', 0)
+                                
+                                if position == "최저가":
+                                    st.success(f"🎯 **{position}** (경쟁사 {competitor_count}개)")
+                                elif position == "평균 이하":
+                                    st.info(f"📊 **{position}** (경쟁사 {competitor_count}개)")
+                                elif position == "평균 이상":
+                                    st.warning(f"📈 **{position}** (경쟁사 {competitor_count}개)")
+                                else:
+                                    st.error(f"💰 **{position}** (경쟁사 {competitor_count}개)")
+                            
+                            st.markdown("---")
+            else:
+                st.info("제품별 경쟁력 데이터가 없습니다.")
         else:
             st.info("제품별 경쟁력 데이터가 없습니다.")
     
     with tab3:
         st.subheader(f"📊 용량별/개수별 시장 현황 ({category_type})")
         
-        if 'volume_count_market' in category_data.get('business_insights', {}):
-            market_data = category_data['business_insights']['volume_count_market']
+        business_insights = category_data.get('business_insights', {})
+        if 'volume_count_market' in business_insights:
+            market_data = business_insights['volume_count_market']
             
             if market_data:
                 st.markdown("#### 🔥 인기 용량/개수 조합 (상위 10개)")
@@ -499,12 +623,15 @@ def show_category_analysis(category_data, category_type):
                 st.dataframe(market_df, use_container_width=True)
                 
                 # 우리가 진출하지 않은 시장 찾기
-                untapped_markets = [item for item in market_data if item['우리_제품수'] == 0]
+                untapped_markets = [item for item in market_data if item.get('우리_제품수', 0) == 0]
                 
                 if untapped_markets:
                     st.markdown("#### 💡 진출 기회 있는 시장")
                     for market in untapped_markets[:5]:  # 상위 5개만 표시
-                        st.info(f"**{market['용량_개수']}**: {market['총_제품수']}개 제품, 평균 단위가격 {market['평균_단위가격']}")
+                        volume_count = market.get('용량_개수', 'N/A')
+                        total_products = market.get('총_제품수', 0)
+                        avg_price = market.get('평균_단위가격', 'N/A')
+                        st.info(f"**{volume_count}**: {total_products}개 제품, 평균 단위가격 {avg_price}")
             else:
                 st.warning("용량별 시장 데이터가 없습니다.")
         else:
@@ -513,40 +640,40 @@ def show_category_analysis(category_data, category_type):
     with tab4:
         st.subheader(f"🏆 브랜드별 시장 점유율 ({category_type})")
         
-        if 'market_share' in category_data.get('business_insights', {}):
-            share_data = category_data['business_insights']['market_share']
+        business_insights = category_data.get('business_insights', {})
+        if 'market_share' in business_insights:
+            share_data = business_insights['market_share']
             
-            share_df = pd.DataFrame([
-                {'브랜드': brand, '제품 수': data['제품_수'], '점유율': f"{data['점유율_퍼센트']}%"}
-                for brand, data in share_data.items()
-            ])
-            
-            st.dataframe(share_df, use_container_width=True)
-            
-            # 서로 브랜드 순위 찾기
-            seoro_rank = None
-            for idx, (brand, _) in enumerate(share_data.items(), 1):
-                if brand == "서로":
-                    seoro_rank = idx
-                    break
-            
-            if seoro_rank:
-                if seoro_rank == 1:
-                    st.success(f"🏆 서로 브랜드가 **1위**입니다!")
-                elif seoro_rank <= 3:
-                    st.info(f"🥉 서로 브랜드가 **{seoro_rank}위**입니다.")
+            if share_data:
+                share_df = pd.DataFrame([
+                    {'브랜드': brand, '제품 수': data.get('제품_수', 0), '점유율': f"{data.get('점유율_퍼센트', 0)}%"}
+                    for brand, data in share_data.items()
+                ])
+                
+                st.dataframe(share_df, use_container_width=True)
+                
+                # 서로 브랜드 순위 찾기
+                seoro_rank = None
+                for idx, (brand, _) in enumerate(share_data.items(), 1):
+                    if brand == "서로":
+                        seoro_rank = idx
+                        break
+                
+                if seoro_rank:
+                    if seoro_rank == 1:
+                        st.success(f"🏆 서로 브랜드가 **1위**입니다!")
+                    elif seoro_rank <= 3:
+                        st.info(f"🥉 서로 브랜드가 **{seoro_rank}위**입니다.")
+                    else:
+                        st.warning(f"📈 서로 브랜드가 **{seoro_rank}위**입니다. 더 많은 제품 라인업이 필요해 보입니다.")
                 else:
-                    st.warning(f"📈 서로 브랜드가 **{seoro_rank}위**입니다. 더 많은 제품 라인업이 필요해 보입니다.")
+                    st.info("서로 브랜드는 현재 상위 10위 안에 없습니다.")
+            else:
+                st.warning("브랜드별 점유율 데이터가 없습니다.")
         else:
             st.info("브랜드별 점유율 데이터가 없습니다.")
 
 def main():
-    st.set_page_config(
-        page_title="서로 수정과 - 시장 가격 분석",
-        page_icon="🥤",
-        layout="wide"
-    )
-    
     # 헤더
     st.title("🥤 서로 수정과 - 시장 가격 분석 대시보드")
     st.markdown("##### *플랫폼별 가격 경쟁력 및 시장 포지셔닝 분석*")
@@ -554,6 +681,16 @@ def main():
     st.markdown("---")
     
     analyzer = SujeonggwaMarketAnalyzer()
+    
+    # 세션 상태 초기화
+    if 'run_analysis' not in st.session_state:
+        st.session_state.run_analysis = False
+    if 'analysis_results' not in st.session_state:
+        st.session_state.analysis_results = None
+    if 'json_content' not in st.session_state:
+        st.session_state.json_content = None
+    if 'timestamp' not in st.session_state:
+        st.session_state.timestamp = None
     
     # 사이드바
     with st.sidebar:
@@ -621,35 +758,41 @@ def main():
             # 핵심 비즈니스 분석
             analysis_results, handmade_df, all_products_df = analyzer.analyze_business_critical_data(df_list)
             
-            status_text.text("📈 시각화 생성 중...")
-            progress_bar.progress(0.9)
-            
-            # GitHub에 자동 저장
-            status_text.text("💾 GitHub에 저장 중...")
-            
-            # 기존 결과 파일들 삭제
-            analyzer.clear_github_results()
-            
-            # 새 결과 저장
-            json_content = json.dumps(analysis_results, ensure_ascii=False, indent=2)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            json_filename = f"analysis_results_{timestamp}.json"
-            
-            github_success = analyzer.save_to_github(json_content, json_filename)
-            
-            progress_bar.progress(1.0)
-            status_text.empty()
-            progress_container.empty()
-            
-            # 결과를 세션 상태에 저장
-            st.session_state.analysis_results = analysis_results
-            st.session_state.json_content = json_content
-            st.session_state.timestamp = timestamp
-            
-            # 결과 대시보드 표시
-            show_analysis_results(analysis_results, json_content, timestamp, github_success)
+            if analysis_results:
+                status_text.text("📈 시각화 생성 중...")
+                progress_bar.progress(0.9)
+                
+                # GitHub에 자동 저장
+                status_text.text("💾 GitHub에 저장 중...")
+                
+                # 기존 결과 파일들 삭제
+                analyzer.clear_github_results()
+                
+                # 새 결과 저장
+                json_content = json.dumps(analysis_results, ensure_ascii=False, indent=2)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                json_filename = f"analysis_results_{timestamp}.json"
+                
+                github_success = analyzer.save_to_github(json_content, json_filename)
+                
+                progress_bar.progress(1.0)
+                status_text.empty()
+                progress_container.empty()
+                
+                # 결과를 세션 상태에 저장
+                st.session_state.analysis_results = analysis_results
+                st.session_state.json_content = json_content
+                st.session_state.timestamp = timestamp
+                
+                # 결과 대시보드 표시
+                show_analysis_results(analysis_results, json_content, timestamp, github_success)
+            else:
+                st.error("분석 중 오류가 발생했습니다.")
             
             # 세션 상태 리셋
+            st.session_state.run_analysis = False
+        else:
+            st.error("처리할 수 있는 파일이 없습니다.")
             st.session_state.run_analysis = False
     
     # 기존 분석 결과가 세션에 있거나 GitHub에서 불러올 수 있는 경우
@@ -701,8 +844,4 @@ def main():
 
 # Streamlit 앱 실행
 if __name__ == "__main__":
-    # 세션 상태 초기화
-    if 'run_analysis' not in st.session_state:
-        st.session_state.run_analysis = False
-    
     main()
