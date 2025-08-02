@@ -19,12 +19,6 @@ from data_handler import DataProcessor
 # Streamlit 설정
 st.set_page_config(**AppConfig.PAGE_CONFIG)
 
-# GitHub 설정
-github_config = AppConfig.get_github_config()
-GITHUB_TOKEN = github_config['token']
-GITHUB_REPO = github_config['repo']
-
-
 class SujeonggwaMarketAnalyzer:
     def __init__(self):
         self.required_columns = AppConfig.REQUIRED_COLUMNS
@@ -501,16 +495,20 @@ class SujeonggwaMarketAnalyzer:
 
     def load_latest_analysis_from_github(self):
         """GitHub에서 최신 분석 결과 불러오기"""
-        if not GITHUB_TOKEN:
+        github_config = AppConfig.get_github_config()
+        github_token = github_config['token']
+        github_api_url = AppConfig.get_github_api_url()
+        
+        if not github_token:
             return None
         
         try:
             headers = {
-                "Authorization": f"token {GITHUB_TOKEN}",
+                "Authorization": f"token {github_token}",
                 "Accept": "application/vnd.github.v3+json"
             }
             
-            response = requests.get(GITHUB_API_URL, headers=headers)
+            response = requests.get(github_api_url, headers=headers)
             
             if response.status_code == 200:
                 files = response.json()
@@ -532,23 +530,27 @@ class SujeonggwaMarketAnalyzer:
 
     def clear_github_results(self):
         """GitHub에서 기존 분석 결과 파일들 삭제"""
-        if not GITHUB_TOKEN:
+        github_config = AppConfig.get_github_config()
+        github_token = github_config['token']
+        github_api_url = AppConfig.get_github_api_url()
+        
+        if not github_token:
             return False
         
         try:
             headers = {
-                "Authorization": f"token {GITHUB_TOKEN}",
+                "Authorization": f"token {github_token}",
                 "Accept": "application/vnd.github.v3+json"
             }
             
-            response = requests.get(GITHUB_API_URL, headers=headers)
+            response = requests.get(github_api_url, headers=headers)
             
             if response.status_code == 200:
                 files = response.json()
                 analysis_files = [f for f in files if f['name'].startswith('analysis_results') and f['name'].endswith('.json')]
                 
                 for file_info in analysis_files:
-                    delete_url = f"{GITHUB_API_URL}/{file_info['name']}"
+                    delete_url = f"{github_api_url}/{file_info['name']}"
                     delete_data = {
                         "message": f"Delete old analysis result: {file_info['name']}",
                         "sha": file_info['sha']
@@ -566,15 +568,19 @@ class SujeonggwaMarketAnalyzer:
 
     def save_to_github(self, content, filename):
         """GitHub에 분석 결과 저장"""
-        if not GITHUB_TOKEN:
+        github_config = AppConfig.get_github_config()
+        github_token = github_config['token']
+        github_api_url = AppConfig.get_github_api_url()
+        
+        if not github_token:
             return False
         
         try:
             content_encoded = base64.b64encode(content.encode('utf-8')).decode()
             
-            url = f"{GITHUB_API_URL}/{filename}"
+            url = f"{github_api_url}/{filename}"
             headers = {
-                "Authorization": f"token {GITHUB_TOKEN}",
+                "Authorization": f"token {github_token}",
                 "Accept": "application/vnd.github.v3+json"
             }
             
