@@ -11,28 +11,22 @@ import base64
 import requests
 from io import BytesIO
 
-# Streamlit 설정
-st.set_page_config(
-    page_title="서로 수정과 - 시장 가격 분석",
-    page_icon="🥤",
-    layout="wide"
-)
+# config.py에서 설정 가져오기
+from config import AppConfig
 
-# GitHub 설정 (안전한 기본값 제공)
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "") if hasattr(st, 'secrets') else ""
-GITHUB_REPO = st.secrets.get("GITHUB_REPO", "coder4052/market_analysis") if hasattr(st, 'secrets') else "coder4052/market_analysis"
-GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/contents"
+# Streamlit 설정
+st.set_page_config(**AppConfig.PAGE_CONFIG)
+
+# GitHub 설정
+github_config = AppConfig.get_github_config()
+GITHUB_TOKEN = github_config['token']
+GITHUB_REPO = github_config['repo']
+
 
 class SujeonggwaMarketAnalyzer:
     def __init__(self):
-        self.required_columns = [
-            "브랜드", "제품명", "용량(ml)", "개수", 
-            "일반 판매가", "일반 판매가 단위가격(100ml당)", 
-            "상시 할인가", "상시 할인가 단위가격(100ml당)",
-            "배송비", "최저가(배송비 포함)", "최저가 단위가격(100ml당)", 
-            "공장형 여부", "리뷰 개수", "평점"
-        ]
-        self.our_brand = "서로"
+        self.required_columns = AppConfig.REQUIRED_COLUMNS
+        self.our_brand = AppConfig.OUR_BRAND
     
     def extract_platform_from_filename(self, filename):
         """파일명에서 플랫폼 추출"""
