@@ -174,9 +174,11 @@ def main():
         
         st.markdown("---")
         
+        # 파일 정보 표시
         analyzer.dashboard_renderer.render_sidebar_file_info(uploaded_files, analyzer.data_processor)
-
-            # 데이터 품질 정보 표시 (새로 추가)
+        
+        # 데이터 품질 정보 표시
+        if uploaded_files:
             with st.expander("📊 데이터 품질 확인", expanded=False):
                 temp_df_list = []
                 for file in uploaded_files:
@@ -194,17 +196,14 @@ def main():
                         st.write("⚠️ 품질 이슈:")
                         for issue in quality_info['quality_issues']:
                             st.write(f"  • {issue}")
-
-        
         
         if st.button("🚀 분석 시작", type="primary", disabled=not uploaded_files):
             st.session_state.run_analysis = True
         
         st.markdown("---")
         
-        # 분석 항목 표
-        analyzer.dashboard_renderer.render_sidebar_analysis_items()
-    
+        # 분석 항목 표시
+        analyzer.dashboard_renderer.render_sidebar_analysis_items()    
 
     # 메인 분석
     if uploaded_files and st.session_state.get('run_analysis', False):
