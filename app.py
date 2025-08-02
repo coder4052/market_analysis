@@ -825,18 +825,6 @@ def main():
             for file in uploaded_files:
                 platform = analyzer.extract_platform_from_filename(file.name)
                 st.write(f"📄 {platform}: {file.name}")
-        
-        if st.button("🚀 분석 시작", type="primary", disabled=not uploaded_files):
-            st.session_state.run_analysis = True
-        
-        st.markdown("---")
-        st.markdown("### 📋 분석 항목")
-        st.markdown("""
-        - ✅ 제품별 가격 경쟁력
-        - ✅ 용량/개수별 시장 분석  
-        - ✅ 브랜드별 점유율
-        - ✅ 진출 기회 발견
-        """)
 
             # 데이터 품질 정보 표시 (새로 추가)
             with st.expander("📊 데이터 품질 확인", expanded=False):
@@ -856,6 +844,20 @@ def main():
                         st.write("⚠️ 품질 이슈:")
                         for issue in quality_info['quality_issues']:
                             st.write(f"  • {issue}")
+
+        
+        
+        if st.button("🚀 분석 시작", type="primary", disabled=not uploaded_files):
+            st.session_state.run_analysis = True
+        
+        st.markdown("---")
+        st.markdown("### 📋 분석 항목")
+        st.markdown("""
+        - ✅ 제품별 가격 경쟁력
+        - ✅ 용량/개수별 시장 분석  
+        - ✅ 브랜드별 점유율
+        - ✅ 진출 기회 발견
+        """)
     
 
     # 메인 분석
