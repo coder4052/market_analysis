@@ -19,7 +19,8 @@ from data_handler import DataProcessor
 from analysis_engine import BusinessAnalyzer
 # dashboard_components.py에서 UI 컴포넌트 가져오기
 from dashboard_components import DashboardRenderer
-
+# github_connector.py에서 GitHub 연동 모듈 가져오기
+from github_connector import GitHubStorage
 
 
 # Streamlit 설정
@@ -32,115 +33,8 @@ class SujeonggwaMarketAnalyzer:
         self.data_processor = DataProcessor()  # 데이터 처리기
         self.business_analyzer = BusinessAnalyzer()  # 분석 엔진 추가
         self.dashboard_renderer = DashboardRenderer()  # UI 렌더러 추가
-    
+        self.github_storage = GitHubStorage()  # GitHub 연동 추가
 
-    def load_latest_analysis_from_github(self):
-        """GitHub에서 최신 분석 결과 불러오기"""
-        github_config = AppConfig.get_github_config()
-        github_token = github_config['token']
-        github_api_url = AppConfig.get_github_api_url()
-        
-        if not github_token:
-            return None
-        
-        try:
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            
-            response = requests.get(github_api_url, headers=headers)
-            
-            if response.status_code == 200:
-                files = response.json()
-                
-                analysis_files = [f for f in files if f['name'].startswith('analysis_results') and f['name'].endswith('.json')]
-                
-                if analysis_files:
-                    latest_file = max(analysis_files, key=lambda x: x['name'])
-                    file_response = requests.get(latest_file['download_url'])
-                    
-                    if file_response.status_code == 200:
-                        return json.loads(file_response.text)
-                
-            return None
-            
-        except Exception as e:
-            st.error(f"GitHub에서 분석 결과 로드 중 오류: {str(e)}")
-            return None
-
-    def clear_github_results(self):
-        """GitHub에서 기존 분석 결과 파일들 삭제"""
-        github_config = AppConfig.get_github_config()
-        github_token = github_config['token']
-        github_api_url = AppConfig.get_github_api_url()
-        
-        if not github_token:
-            return False
-        
-        try:
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            
-            response = requests.get(github_api_url, headers=headers)
-            
-            if response.status_code == 200:
-                files = response.json()
-                analysis_files = [f for f in files if f['name'].startswith('analysis_results') and f['name'].endswith('.json')]
-                
-                for file_info in analysis_files:
-                    delete_url = f"{github_api_url}/{file_info['name']}"
-                    delete_data = {
-                        "message": f"Delete old analysis result: {file_info['name']}",
-                        "sha": file_info['sha']
-                    }
-                    
-                    delete_response = requests.delete(delete_url, headers=headers, json=delete_data)
-                    if delete_response.status_code != 200:
-                        st.warning(f"파일 삭제 실패: {file_info['name']}")
-                
-                return True
-            
-        except Exception as e:
-            st.error(f"GitHub 파일 삭제 중 오류: {str(e)}")
-            return False
-
-    def save_to_github(self, content, filename):
-        """GitHub에 분석 결과 저장"""
-        github_config = AppConfig.get_github_config()
-        github_token = github_config['token']
-        github_api_url = AppConfig.get_github_api_url()
-        
-        if not github_token:
-            return False
-        
-        try:
-            content_encoded = base64.b64encode(content.encode('utf-8')).decode()
-            
-            url = f"{github_api_url}/{filename}"
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            
-            data = {
-                "message": f"📊 수정과 시장 분석 결과 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                "content": content_encoded,
-            }
-            
-            response = requests.put(url, headers=headers, json=data)
-            
-            if response.status_code in [200, 201]:
-                return True
-            else:
-                st.error(f"GitHub 업로드 실패: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            st.error(f"GitHub 저장 중 오류: {str(e)}")
-            return False
 
 def main():
     # 헤더
@@ -248,14 +142,14 @@ def main():
                 status_text.text("💾 GitHub에 저장 중...")
                 
                 # 기존 결과 파일들 삭제
-                analyzer.clear_github_results()
+                analyzer.github_storage.clear_old_analysis_results(keep_latest=3)
                 
                 # 새 결과 저장
                 json_content = json.dumps(analysis_results, ensure_ascii=False, indent=2)
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 json_filename = f"analysis_results_{timestamp}.json"
                 
-                github_success = analyzer.save_to_github(json_content, json_filename)
+                github_success, saved_filename = analyzer.github_storage.save_analysis_results(analysis_results, json_filename)
                 
                 progress_bar.progress(1.0)
                 status_text.empty()
@@ -283,7 +177,7 @@ def main():
         # 세션에 결과가 없으면 GitHub에서 불러오기
         if not st.session_state.get('analysis_results'):
             with st.spinner("GitHub에서 최신 분석 결과를 불러오는 중..."):
-                latest_analysis = analyzer.load_latest_analysis_from_github()
+                latest_analysis = analyzer.github_storage.load_latest_analysis()
                 
                 if latest_analysis:
                     st.session_state.analysis_results = latest_analysis
