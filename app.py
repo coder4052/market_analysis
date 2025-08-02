@@ -13,6 +13,8 @@ from io import BytesIO
 
 # config.py에서 설정 가져오기
 from config import AppConfig
+# data_handler.py에서 데이터 처리 클래스 가져오기
+from data_handler import DataProcessor
 
 # Streamlit 설정
 st.set_page_config(**AppConfig.PAGE_CONFIG)
