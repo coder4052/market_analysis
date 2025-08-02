@@ -17,6 +17,9 @@ from config import AppConfig
 from data_handler import DataProcessor
 # analysis_engine.py에서 분석 엔진 가져오기
 from analysis_engine import BusinessAnalyzer
+# dashboard_components.py에서 UI 컴포넌트 가져오기
+from dashboard_components import DashboardRenderer
+
 
 
 # Streamlit 설정
