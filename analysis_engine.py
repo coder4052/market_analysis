@@ -955,4 +955,16 @@ class BusinessAnalyzer:
         # 경쟁사 세부 정보
         competitor_details = self._get_competitor_details(competitors)
         
-        return
+        return {
+            '제품': f"{our_product.get('제품명', '')} {our_product.get('용량(ml)', 0)}ml {our_product.get('개수', 0)}개",
+            '우리_단위가격': f"{our_unit_price:,.0f}원",
+            '경쟁사_평균': f"{competitor_avg:,.0f}원",
+            '경쟁사_최저': f"{competitor_min:,.0f}원",
+            '경쟁사_최고': f"{competitor_max:,.0f}원",
+            '가격차이': f"{price_gap:+,.0f}원",
+            '가격차이_퍼센트': f"{price_gap_percent:+.1f}%",
+            '시장_포지션': f"{position_color} {market_position}",
+            '경쟁사_수': len(competitors),
+            '비교_기준': comparison_type,
+            '주요_경쟁사': competitor_details[:3]
+        }
