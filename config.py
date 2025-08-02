@@ -61,6 +61,14 @@ class AppConfig:
                 'token': "",
                 'repo': "coder4052/market_analysis"
             }
+
+    @staticmethod
+    def get_github_api_url():
+        """GitHub API URL을 생성합니다"""
+        github_config = AppConfig.get_github_config()
+        return f"https://api.github.com/repos/{github_config['repo']}/contents"
+    
+
     
     # 📈 UI 메시지들
     UI_MESSAGES = {
