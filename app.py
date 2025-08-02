@@ -29,55 +29,7 @@ class SujeonggwaMarketAnalyzer:
     def __init__(self):
         self.required_columns = AppConfig.REQUIRED_COLUMNS
         self.our_brand = AppConfig.OUR_BRAND
-    
-    def extract_platform_from_filename(self, filename):
-        """파일명에서 플랫폼 추출"""
-        filename_lower = filename.lower()
-        if '네이버' in filename:
-            return '네이버'
-        elif '쿠팡' in filename:
-            return '쿠팡'
-        elif '올웨이즈' in filename:
-            return '올웨이즈'
-        else:
-            return '기타'
-    
-    def load_and_standardize_excel(self, uploaded_file):
-        """엑셀 파일 로드 및 표준화"""
-        try:
-            df = pd.read_excel(uploaded_file, sheet_name=0)
-            platform = self.extract_platform_from_filename(uploaded_file.name)
-            
-            # 필요한 컬럼만 추출
-            available_columns = [col for col in self.required_columns if col in df.columns]
-            missing_columns = [col for col in self.required_columns if col not in df.columns]
-            
-            if missing_columns:
-                st.warning(f"[{platform}] 누락된 컬럼: {missing_columns}")
-            
-            if not available_columns:
-                st.error(f"[{platform}] 필수 컬럼이 없습니다.")
-                return None, None, None
-            
-            # 데이터 정제
-            df_clean = df[available_columns].copy()
-            df_clean['플랫폼'] = platform
-            df_clean['분석_시간'] = datetime.now().strftime('%Y-%m-%d %H:%M')
-            
-            # 숫자형 컬럼 변환 (안전하게 처리)
-            numeric_columns = ['용량(ml)', '개수', '최저가(배송비 포함)', '최저가 단위가격(100ml당)', '공장형 여부']
-            for col in numeric_columns:
-                if col in df_clean.columns:
-                    df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
-            
-            # NaN 값 제거
-            df_clean = df_clean.dropna(subset=['브랜드', '제품명'])
-            
-            return df_clean, platform, missing_columns
-            
-        except Exception as e:
-            st.error(f"파일 처리 중 오류: {str(e)}")
-            return None, None, None
+        self.data_processor = DataProcessor()  # 데이터 처리기 추가
     
     def analyze_business_critical_data(self, df_list):
         """소상공인 관점의 핵심 비즈니스 분석"""
@@ -886,6 +838,26 @@ def main():
         - ✅ 진출 기회 발견
         """)
 
+            # 데이터 품질 정보 표시 (새로 추가)
+            with st.expander("📊 데이터 품질 확인", expanded=False):
+                temp_df_list = []
+                for file in uploaded_files:
+                    df, platform, missing_cols = analyzer.data_processor.load_and_standardize_excel(file)
+                    if df is not None:
+                        temp_df_list.append(df)
+                
+                if temp_df_list:
+                    quality_info = analyzer.data_processor.validate_data_quality(temp_df_list)
+                    st.write(f"📁 총 {quality_info['total_files']}개 파일")
+                    st.write(f"📊 총 {quality_info['total_products']}개 제품")
+                    st.write(f"🏪 플랫폼: {', '.join(quality_info['platforms'])}")
+                    
+                    if quality_info['quality_issues']:
+                        st.write("⚠️ 품질 이슈:")
+                        for issue in quality_info['quality_issues']:
+                            st.write(f"  • {issue}")
+    
+
     # 메인 분석
     if uploaded_files and st.session_state.get('run_analysis', False):
         
@@ -903,7 +875,7 @@ def main():
             status_text.text(f"📂 파일 처리 중: {uploaded_file.name}")
             progress_bar.progress((i + 1) / len(uploaded_files) * 0.4)
             
-            df, platform, missing_cols = analyzer.load_and_standardize_excel(uploaded_file)
+            df, platform, missing_cols = analyzer.data_processor.load_and_standardize_excel(uploaded_file)
             
             if df is not None:
                 df_list.append(df)
